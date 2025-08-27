@@ -186,3 +186,8 @@ config/secrets/
 *.pem
 *.crt
 credentials.json
+
+
+# Claude.md
+CLAUDE.md
+

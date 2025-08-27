@@ -6,8 +6,8 @@ from core.config.settings import Settings, RedpandaSettings
 from core.database.connection import DatabaseManager
 from core.logging import get_trading_logger_safe, get_error_logger_safe
 from .managers.manager_factory import PortfolioManagerFactory
-from .managers.paper_portfolio_manager import PaperPortfolioManager
-from .managers.zerodha_portfolio_manager import ZerodhaPortfolioManager
+from .managers.paper_manager import PaperPortfolioManager
+from .managers.zerodha_manager import ZerodhaPortfolioManager
 
 
 class PortfolioManagerService:
@@ -32,9 +32,9 @@ class PortfolioManagerService:
         self.portfolio_managers = {}
         for broker in settings.active_brokers:
             if broker == "paper":
-                self.portfolio_managers[broker] = PaperPortfolioManager(redis_client, broker)
+                self.portfolio_managers[broker] = PaperPortfolioManager(settings, redis_client)
             elif broker == "zerodha":
-                self.portfolio_managers[broker] = ZerodhaPortfolioManager(redis_client, broker)
+                self.portfolio_managers[broker] = ZerodhaPortfolioManager(settings, redis_client, db_manager)
         
         self.logger = get_trading_logger_safe("portfolio_manager_service")
         self.error_logger = get_error_logger_safe("portfolio_manager_errors")

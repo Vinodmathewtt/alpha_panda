@@ -37,10 +37,11 @@ class RealisticMarketDataGenerator:
         if seed:
             random.seed(seed)
         
+        # All instruments from services/market_feed/instruments.csv
         self.instruments = {
             256265: InstrumentConfig(  # NIFTY 50
                 instrument_token=256265,
-                symbol="NIFTY 50",
+                symbol="NIFTY50",
                 base_price=Decimal("21500.00"),
                 volatility=0.015,  # 1.5% daily volatility
                 volume_base=50000,
@@ -62,6 +63,159 @@ class RealisticMarketDataGenerator:
                 base_price=Decimal("2450.00"),
                 volatility=0.020,  # 2% daily volatility
                 volume_base=100000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            408065: InstrumentConfig(  # BAJFINANCE
+                instrument_token=408065,
+                symbol="BAJFINANCE",
+                base_price=Decimal("6800.00"),
+                volatility=0.022,
+                volume_base=75000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            81153: InstrumentConfig(  # TCS
+                instrument_token=81153,
+                symbol="TCS",
+                base_price=Decimal("3600.00"),
+                volatility=0.018,
+                volume_base=85000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            1270529: InstrumentConfig(  # ICICIBANK
+                instrument_token=1270529,
+                symbol="ICICIBANK",
+                base_price=Decimal("1200.00"),
+                volatility=0.021,
+                volume_base=120000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            492033: InstrumentConfig(  # KOTAKBANK
+                instrument_token=492033,
+                symbol="KOTAKBANK",
+                base_price=Decimal("1750.00"),
+                volatility=0.019,
+                volume_base=90000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            2815745: InstrumentConfig(  # BAJAJFINSV
+                instrument_token=2815745,
+                symbol="BAJAJFINSV",
+                base_price=Decimal("1550.00"),
+                volatility=0.023,
+                volume_base=65000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            4267265: InstrumentConfig(  # ASIANPAINT
+                instrument_token=4267265,
+                symbol="ASIANPAINT",
+                base_price=Decimal("3100.00"),
+                volatility=0.017,
+                volume_base=55000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            177665: InstrumentConfig(  # TITAN
+                instrument_token=177665,
+                symbol="TITAN",
+                base_price=Decimal("3200.00"),
+                volatility=0.024,
+                volume_base=70000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            3861249: InstrumentConfig(  # MARUTI
+                instrument_token=3861249,
+                symbol="MARUTI",
+                base_price=Decimal("11000.00"),
+                volatility=0.020,
+                volume_base=40000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            225537: InstrumentConfig(  # ULTRACEMCO
+                instrument_token=225537,
+                symbol="ULTRACEMCO",
+                base_price=Decimal("10500.00"),
+                volatility=0.025,
+                volume_base=35000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            1346049: InstrumentConfig(  # ADANIPORTS
+                instrument_token=1346049,
+                symbol="ADANIPORTS",
+                base_price=Decimal("1300.00"),
+                volatility=0.028,
+                volume_base=80000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            2939649: InstrumentConfig(  # NTPC
+                instrument_token=2939649,
+                symbol="NTPC",
+                base_price=Decimal("350.00"),
+                volatility=0.016,
+                volume_base=150000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            140033: InstrumentConfig(  # BHARTIARTL
+                instrument_token=140033,
+                symbol="BHARTIARTL",
+                base_price=Decimal("1500.00"),
+                volatility=0.018,
+                volume_base=95000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            3050241: InstrumentConfig(  # POWERGRID
+                instrument_token=3050241,
+                symbol="POWERGRID",
+                base_price=Decimal("320.00"),
+                volatility=0.015,
+                volume_base=140000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            1195009: InstrumentConfig(  # M&M
+                instrument_token=1195009,
+                symbol="M&M",
+                base_price=Decimal("2800.00"),
+                volatility=0.022,
+                volume_base=60000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            857857: InstrumentConfig(  # WIPRO
+                instrument_token=857857,
+                symbol="WIPRO",
+                base_price=Decimal("550.00"),
+                volatility=0.019,
+                volume_base=110000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            424961: InstrumentConfig(  # COALINDIA
+                instrument_token=424961,
+                symbol="COALINDIA",
+                base_price=Decimal("400.00"),
+                volatility=0.020,
+                volume_base=100000,
+                tick_size=Decimal("0.05"),
+                lot_size=1
+            ),
+            2714625: InstrumentConfig(  # HINDUNILVR
+                instrument_token=2714625,
+                symbol="HINDUNILVR",
+                base_price=Decimal("2400.00"),
+                volatility=0.014,
+                volume_base=75000,
                 tick_size=Decimal("0.05"),
                 lot_size=1
             )

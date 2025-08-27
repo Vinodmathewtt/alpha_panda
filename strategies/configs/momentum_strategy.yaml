@@ -2,7 +2,7 @@
 strategy_name: 'Momentum_NIFTY_1'
 strategy_class: 'MomentumStrategy'
 module_name: 'strategies.momentum'
-instrument_tokens: [256265, 260105]  # NIFTY 50, BANKNIFTY
+instrument_tokens: [256265, 260105, 738561, 408065, 81153, 1270529, 492033, 2815745, 4267265, 177665, 3861249, 225537, 1346049, 2939649, 140033, 3050241, 1195009, 857857, 424961, 2714625]  # All instruments from instruments.csv
 parameters:
   lookback_period: 20
   momentum_threshold: 0.02

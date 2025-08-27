@@ -231,7 +231,7 @@ class TestRealisticDataGenerator:
         assert "symbol" in nifty_data
         assert "current_price" in nifty_data
         assert "cumulative_volume" in nifty_data
-        assert nifty_data["symbol"] == "NIFTY 50"
+        assert nifty_data["symbol"] == "NIFTY50"
 
 
 class TestMarketModes:

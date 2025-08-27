@@ -71,6 +71,16 @@ class ExecutionMode(str, Enum):
     ZERODHA = "zerodha"
 
 
+class OrderStatus(str, Enum):
+    """Order status enumeration"""
+    PENDING = "PENDING"
+    PLACED = "PLACED"
+    FILLED = "FILLED"
+    CANCELLED = "CANCELLED"
+    REJECTED = "REJECTED"
+    FAILED = "FAILED"
+
+
 class MarketDepthLevel(BaseModel):
     """Single level of market depth"""
     price: Decimal
@@ -156,26 +166,30 @@ class RejectedSignal(BaseModel):
 
 class OrderPlaced(BaseModel):
     """Order placement event"""
-    strategy_id: str
+    order_id: str
     instrument_token: int
     signal_type: SignalType
     quantity: int
     price: Optional[Decimal]
-    order_id: str
-    execution_mode: ExecutionMode
     timestamp: datetime
+    broker: str
+    status: OrderStatus
+    strategy_id: Optional[str] = None
+    execution_mode: Optional[ExecutionMode] = None
 
 
 class OrderFilled(BaseModel):
     """Order fill event - both paper and live"""
-    strategy_id: str
+    order_id: str
     instrument_token: int
-    signal_type: SignalType
     quantity: int
     fill_price: Decimal
-    order_id: str
-    execution_mode: ExecutionMode
     timestamp: datetime
+    broker: str
+    side: Optional[str] = "BUY"  # BUY or SELL
+    strategy_id: Optional[str] = None
+    signal_type: Optional[SignalType] = None
+    execution_mode: Optional[ExecutionMode] = None
     fees: Optional[Decimal] = None
 
 
@@ -189,4 +203,37 @@ class OrderFailed(BaseModel):
     order_id: str
     execution_mode: ExecutionMode
     error_message: str
+    timestamp: datetime
+
+
+class Position(BaseModel):
+    """Portfolio position model"""
+    instrument_token: int
+    quantity: int
+    average_price: Decimal
+    current_price: Optional[Decimal] = None
+    unrealized_pnl: Optional[Decimal] = None
+    realized_pnl: Optional[Decimal] = None
+    broker: str
+    last_updated: datetime
+
+
+class PortfolioSnapshot(BaseModel):
+    """Portfolio snapshot model"""
+    broker: str
+    cash_balance: Decimal
+    total_value: Decimal
+    unrealized_pnl: Decimal
+    realized_pnl: Decimal
+    positions: List[Position]
+    timestamp: datetime
+
+
+class PnlSnapshot(BaseModel):
+    """P&L snapshot model"""
+    broker: str
+    instrument_token: Optional[int] = None
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+    total_pnl: Decimal
     timestamp: datetime

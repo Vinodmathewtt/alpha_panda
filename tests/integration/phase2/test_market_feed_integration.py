@@ -26,12 +26,20 @@ class TestMarketFeedServiceIntegration:
         """Create mock settings"""
         settings = Mock(spec=Settings)
         settings.active_brokers = ["paper", "zerodha"]
+        settings.broker_namespace = "test"
         settings.reconnection = Mock()
         settings.reconnection.max_attempts = 3
         settings.reconnection.base_delay_seconds = 1.0
         settings.reconnection.max_delay_seconds = 60.0
         settings.reconnection.backoff_multiplier = 2.0
         settings.reconnection.timeout_seconds = 30.0
+        # Add kafka settings
+        settings.kafka = Mock()
+        settings.kafka.bootstrap_servers = "localhost:19092"
+        # Add zerodha settings
+        settings.zerodha = Mock()
+        settings.zerodha.api_key = "test_api_key"
+        settings.zerodha.api_secret = "test_api_secret"
         return settings
     
     @pytest.fixture
@@ -312,7 +320,8 @@ class TestMarketFeedServiceIntegration:
                 # Service should handle auth failures gracefully
                 assert service.error_logger is not None
                 
-    def test_market_feed_instrument_loading(self, mock_redpanda_config, mock_settings,
+    @pytest.mark.asyncio
+    async def test_market_feed_instrument_loading(self, mock_redpanda_config, mock_settings,
                                            mock_auth_service, mock_instrument_registry,
                                            mock_redis_client):
         """Test instrument loading integration"""
@@ -337,10 +346,8 @@ class TestMarketFeedServiceIntegration:
             )
             
             # Test instrument loading
-            with patch.object(service, '_load_instruments_from_csv') as mock_load:
-                mock_load.return_value = None
-                
-                await service._load_instruments_from_csv()
+            with patch.object(service, '_load_instruments_from_csv', new_callable=AsyncMock) as mock_load:
+                await mock_load()
                 mock_load.assert_called_once()
 
 
