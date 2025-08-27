@@ -1,0 +1,7 @@
+# Redpanda Console configuration for development
+kafka:
+  brokers: ["redpanda:29092"]
+  clientId: "alpha-panda-console"
+
+console:
+  enabled: true

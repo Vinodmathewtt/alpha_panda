@@ -1,0 +1,83 @@
+# Development infrastructure: Redpanda, PostgreSQL, Redis
+
+services:
+  # Redpanda - Unified Log for event streaming  
+  redpanda:
+    image: redpandadata/redpanda:v24.2.4
+    container_name: alpha-panda-redpanda
+    ports:
+      - "9092:9092"      # Kafka API
+      - "9644:9644"      # Admin API
+      - "8082:8082"      # Schema Registry
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=localhost:8082
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster info"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # PostgreSQL - Configuration and application state
+  postgres:
+    image: postgres:15-alpine
+    container_name: alpha-panda-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: alpha_panda
+      POSTGRES_USER: alpha_panda
+      POSTGRES_PASSWORD: alpha_panda
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alpha_panda"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Portfolio cache and materialized views
+  redis:
+    image: redis:7-alpine
+    container_name: alpha-panda-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redpanda Console - Web UI for development
+  console:
+    image: redpandadata/console:v2.7.2
+    container_name: alpha-panda-console
+    ports:
+      - "8080:8080"
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+    volumes:
+      - ./config/redpanda-console.yml:/tmp/config.yml:ro
+    depends_on:
+      - redpanda
+    profiles:
+      - console
+
+volumes:
+  redpanda_data:
+  postgres_data:
+  redis_data:

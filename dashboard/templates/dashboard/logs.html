@@ -1,0 +1,497 @@
+{% extends "base.html" %}
+
+{% block title %}Log Viewer - Alpha Panda{% endblock %}
+
+{% block content %}
+<div x-data="logViewer()" class="space-y-6">
+    <!-- Log Controls -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex flex-wrap gap-4 items-center">
+                <!-- Log Level Filter -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Log Level</span>
+                    </label>
+                    <select class="select select-bordered" x-model="selectedLevel" @change="filterLogs()">
+                        <option value="">All Levels</option>
+                        <option value="DEBUG">Debug</option>
+                        <option value="INFO">Info</option>
+                        <option value="WARNING">Warning</option>
+                        <option value="ERROR">Error</option>
+                        <option value="CRITICAL">Critical</option>
+                    </select>
+                </div>
+                
+                <!-- Service Filter -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Service</span>
+                    </label>
+                    <select class="select select-bordered" x-model="selectedService" @change="filterLogs()">
+                        <option value="">All Services</option>
+                        <option value="market_feed">Market Feed</option>
+                        <option value="strategy_runner">Strategy Runner</option>
+                        <option value="risk_manager">Risk Manager</option>
+                        <option value="trading_engine">Trading Engine</option>
+                        <option value="portfolio_manager">Portfolio Manager</option>
+                        <option value="api">API</option>
+                        <option value="dashboard">Dashboard</option>
+                    </select>
+                </div>
+                
+                <!-- Search -->
+                <div class="form-control flex-1">
+                    <label class="label">
+                        <span class="label-text">Search</span>
+                    </label>
+                    <input type="text" 
+                           class="input input-bordered" 
+                           placeholder="Search logs..." 
+                           x-model="searchQuery"
+                           @input.debounce.500ms="filterLogs()">
+                </div>
+                
+                <!-- Time Range -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Time Range</span>
+                    </label>
+                    <select class="select select-bordered" x-model="timeRange" @change="filterLogs()">
+                        <option value="5m">Last 5 minutes</option>
+                        <option value="15m">Last 15 minutes</option>
+                        <option value="1h" selected>Last hour</option>
+                        <option value="6h">Last 6 hours</option>
+                        <option value="24h">Last 24 hours</option>
+                    </select>
+                </div>
+                
+                <!-- Controls -->
+                <div class="flex gap-2">
+                    <button class="btn btn-primary" @click="toggleAutoScroll()">
+                        <span x-text="autoScroll ? 'Pause' : 'Resume'"></span>
+                        <svg x-show="autoScroll" class="w-4 h-4 ml-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                        </svg>
+                        <svg x-show="!autoScroll" class="w-4 h-4 ml-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                    <button class="btn btn-secondary" @click="clearLogs()">
+                        <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" clip-rule="evenodd"></path>
+                            <path fill-rule="evenodd" d="M10 5a2 2 0 00-2 2v6a2 2 0 104 0V7a2 2 0 00-2-2z" clip-rule="evenodd"></path>
+                        </svg>
+                        Clear
+                    </button>
+                    <button class="btn btn-accent" @click="exportLogs()">
+                        <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                        Export
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Stream -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body p-0">
+            <div class="bg-black text-green-400 font-mono text-sm p-4 h-96 overflow-y-auto" 
+                 id="log-container"
+                 :class="{ 'auto-scroll': autoScroll }">
+                
+                <!-- Log entries will be populated here -->
+                <div id="log-stream" class="space-y-1">
+                    <template x-for="(log, index) in filteredLogs" :key="index">
+                        <div class="log-entry" :class="`log-level-${log.level}`">
+                            <span class="text-gray-500">[<span x-text="formatTimestamp(log.timestamp)"></span>]</span>
+                            <span class="text-blue-400">[<span x-text="log.level"></span>]</span>
+                            <span class="text-yellow-400"><span x-text="log.service"></span>:</span>
+                            <span x-text="log.message"></span>
+                            <span x-show="log.trace" class="text-red-400 block pl-4" x-text="log.trace"></span>
+                        </div>
+                    </template>
+                    
+                    <!-- Loading indicator -->
+                    <div x-show="isLoading" class="text-yellow-400 text-center py-4">
+                        <div class="loading loading-dots loading-md"></div>
+                        <span>Loading logs...</span>
+                    </div>
+                    
+                    <!-- No logs message -->
+                    <div x-show="filteredLogs.length === 0 && !isLoading" class="text-gray-400 text-center py-8">
+                        No logs match the current filters.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Statistics -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Total Entries</div>
+                <div class="stat-value" x-text="logStats.total"></div>
+                <div class="stat-desc">All time</div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Errors</div>
+                <div class="stat-value text-error" x-text="logStats.errors"></div>
+                <div class="stat-desc">Current session</div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Warnings</div>
+                <div class="stat-value text-warning" x-text="logStats.warnings"></div>
+                <div class="stat-desc">Current session</div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Last Minute</div>
+                <div class="stat-value" x-text="logStats.lastMinute"></div>
+                <div class="stat-desc">Recent entries</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Advanced Filters Modal -->
+    <div class="modal" :class="{ 'modal-open': showAdvancedFilters }">
+        <div class="modal-box w-11/12 max-w-2xl">
+            <h3 class="font-bold text-lg">Advanced Log Filters</h3>
+            
+            <div class="py-4 space-y-4">
+                <!-- Date Range -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Custom Date Range</span>
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="datetime-local" class="input input-bordered flex-1" x-model="customDateFrom">
+                        <span class="self-center">to</span>
+                        <input type="datetime-local" class="input input-bordered flex-1" x-model="customDateTo">
+                    </div>
+                </div>
+                
+                <!-- Regex Search -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Regular Expression</span>
+                    </label>
+                    <input type="text" class="input input-bordered" x-model="regexPattern" placeholder=".*error.*|.*exception.*">
+                    <label class="label">
+                        <span class="label-text-alt">Use regex patterns for advanced search</span>
+                    </label>
+                </div>
+                
+                <!-- Log Levels (Multi-select) -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Log Levels</span>
+                    </label>
+                    <div class="flex flex-wrap gap-2">
+                        <template x-for="level in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']" :key="level">
+                            <label class="label cursor-pointer">
+                                <input type="checkbox" class="checkbox checkbox-sm" x-model="selectedLevels" :value="level">
+                                <span class="label-text ml-2" x-text="level"></span>
+                            </label>
+                        </template>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-action">
+                <button class="btn btn-primary" @click="applyAdvancedFilters()">Apply Filters</button>
+                <button class="btn btn-ghost" @click="showAdvancedFilters = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.log-entry {
+    @apply mb-1 whitespace-pre-wrap break-words leading-tight;
+}
+
+.log-level-DEBUG { @apply text-gray-400; }
+.log-level-INFO { @apply text-green-400; }
+.log-level-WARNING { @apply text-yellow-400; }
+.log-level-ERROR { @apply text-red-400; }
+.log-level-CRITICAL { @apply text-red-600 font-bold; }
+
+.auto-scroll {
+    scroll-behavior: smooth;
+}
+
+#log-container {
+    font-family: 'Courier New', Consolas, monospace;
+}
+
+.log-entry:hover {
+    @apply bg-gray-900 bg-opacity-50 rounded px-2 -mx-2;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ request.state.csp_nonce }}">
+function logViewer() {
+    return {
+        selectedLevel: '',
+        selectedService: '',
+        searchQuery: '',
+        timeRange: '1h',
+        autoScroll: true,
+        isLoading: false,
+        logs: [],
+        filteredLogs: [],
+        logStats: {
+            total: 0,
+            errors: 0,
+            warnings: 0,
+            lastMinute: 0
+        },
+        
+        // Advanced filters
+        showAdvancedFilters: false,
+        customDateFrom: '',
+        customDateTo: '',
+        regexPattern: '',
+        selectedLevels: [],
+        
+        init() {
+            this.loadInitialLogs();
+            this.startLogStream();
+            this.updateLogStats();
+            setInterval(() => this.updateLogStats(), 5000);
+        },
+        
+        loadInitialLogs() {
+            // Load some initial log entries
+            this.isLoading = true;
+            
+            // Simulate loading initial logs
+            setTimeout(() => {
+                this.logs = this.generateMockLogs(50);
+                this.filterLogs();
+                this.isLoading = false;
+            }, 1000);
+        },
+        
+        startLogStream() {
+            // Simulate real-time log streaming
+            setInterval(() => {
+                if (!this.autoScroll) return;
+                
+                const newLog = this.generateRandomLogEntry();
+                this.logs.push(newLog);
+                
+                // Keep only last 1000 logs to prevent memory issues
+                if (this.logs.length > 1000) {
+                    this.logs = this.logs.slice(-1000);
+                }
+                
+                this.filterLogs();
+                
+                if (this.autoScroll) {
+                    this.$nextTick(() => {
+                        const container = document.getElementById('log-container');
+                        container.scrollTop = container.scrollHeight;
+                    });
+                }
+            }, 2000);
+        },
+        
+        generateMockLogs(count) {
+            const logs = [];
+            const services = ['market_feed', 'strategy_runner', 'risk_manager', 'trading_engine', 'portfolio_manager', 'api', 'dashboard'];
+            const levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'];
+            const messages = [
+                'Service started successfully',
+                'Processing market tick data',
+                'Signal generated for AAPL',
+                'Risk check passed',
+                'Order submitted to broker',
+                'Portfolio updated',
+                'Connection established',
+                'Configuration loaded',
+                'Memory usage: 45%',
+                'Database query completed',
+                'Authentication successful',
+                'Rate limit applied',
+                'Cache miss for key: positions',
+                'WebSocket connection established',
+                'HTTP request processed',
+                'Error processing request',
+                'Timeout waiting for response',
+                'Invalid data format received',
+                'Connection lost, retrying...',
+                'Critical system failure detected'
+            ];
+            
+            for (let i = 0; i < count; i++) {
+                const timestamp = Date.now() - (Math.random() * 3600000); // Last hour
+                const service = services[Math.floor(Math.random() * services.length)];
+                const level = levels[Math.floor(Math.random() * levels.length)];
+                const message = messages[Math.floor(Math.random() * messages.length)];
+                
+                logs.push({
+                    timestamp,
+                    service,
+                    level,
+                    message: `${message} (ID: ${Math.random().toString(36).substr(2, 9)})`,
+                    trace: level === 'ERROR' || level === 'CRITICAL' ? 'Traceback: at line 42 in handler.py' : null
+                });
+            }
+            
+            return logs.sort((a, b) => a.timestamp - b.timestamp);
+        },
+        
+        generateRandomLogEntry() {
+            const services = ['market_feed', 'strategy_runner', 'risk_manager', 'trading_engine', 'portfolio_manager', 'api'];
+            const levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR'];
+            const levelWeights = [0.3, 0.5, 0.15, 0.05]; // More info, fewer errors
+            
+            let level = 'INFO';
+            const rand = Math.random();
+            let cumulative = 0;
+            for (let i = 0; i < levelWeights.length; i++) {
+                cumulative += levelWeights[i];
+                if (rand <= cumulative) {
+                    level = levels[i];
+                    break;
+                }
+            }
+            
+            const service = services[Math.floor(Math.random() * services.length)];
+            const messages = {
+                'DEBUG': ['Entering function process_tick()', 'Cache hit for instrument data', 'Validating signal parameters'],
+                'INFO': ['Successfully processed 100 ticks', 'New position opened', 'Heartbeat received'],
+                'WARNING': ['High memory usage detected', 'Slow database response', 'Rate limit approaching'],
+                'ERROR': ['Failed to connect to broker', 'Invalid order format', 'Database timeout']
+            };
+            
+            const message = messages[level][Math.floor(Math.random() * messages[level].length)];
+            
+            return {
+                timestamp: Date.now(),
+                service,
+                level,
+                message: `${message} (ID: ${Math.random().toString(36).substr(2, 9)})`,
+                trace: level === 'ERROR' ? 'Traceback: at line ' + Math.floor(Math.random() * 100) + ' in handler.py' : null
+            };
+        },
+        
+        filterLogs() {
+            let filtered = [...this.logs];
+            
+            // Filter by level
+            if (this.selectedLevel) {
+                filtered = filtered.filter(log => log.level === this.selectedLevel);
+            }
+            
+            // Filter by service
+            if (this.selectedService) {
+                filtered = filtered.filter(log => log.service === this.selectedService);
+            }
+            
+            // Filter by search query
+            if (this.searchQuery) {
+                const query = this.searchQuery.toLowerCase();
+                filtered = filtered.filter(log => 
+                    log.message.toLowerCase().includes(query) ||
+                    log.service.toLowerCase().includes(query) ||
+                    log.level.toLowerCase().includes(query)
+                );
+            }
+            
+            // Filter by time range
+            if (this.timeRange !== 'all') {
+                const now = Date.now();
+                const ranges = {
+                    '5m': 5 * 60 * 1000,
+                    '15m': 15 * 60 * 1000,
+                    '1h': 60 * 60 * 1000,
+                    '6h': 6 * 60 * 60 * 1000,
+                    '24h': 24 * 60 * 60 * 1000
+                };
+                
+                const cutoff = now - ranges[this.timeRange];
+                filtered = filtered.filter(log => log.timestamp >= cutoff);
+            }
+            
+            // Apply regex filter if set
+            if (this.regexPattern) {
+                try {
+                    const regex = new RegExp(this.regexPattern, 'i');
+                    filtered = filtered.filter(log => regex.test(log.message));
+                } catch (e) {
+                    console.warn('Invalid regex pattern:', e);
+                }
+            }
+            
+            // Apply advanced level filters
+            if (this.selectedLevels.length > 0) {
+                filtered = filtered.filter(log => this.selectedLevels.includes(log.level));
+            }
+            
+            this.filteredLogs = filtered;
+        },
+        
+        toggleAutoScroll() {
+            this.autoScroll = !this.autoScroll;
+        },
+        
+        clearLogs() {
+            this.logs = [];
+            this.filteredLogs = [];
+            this.logStats = { total: 0, errors: 0, warnings: 0, lastMinute: 0 };
+        },
+        
+        exportLogs() {
+            const logData = this.filteredLogs.map(log => 
+                `${this.formatTimestamp(log.timestamp)} [${log.level}] ${log.service}: ${log.message}${log.trace ? '\n' + log.trace : ''}`
+            ).join('\n');
+            
+            const blob = new Blob([logData], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `alpha-panda-logs-${new Date().toISOString().split('T')[0]}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        },
+        
+        formatTimestamp(timestamp) {
+            return new Date(timestamp).toLocaleString();
+        },
+        
+        updateLogStats() {
+            this.logStats.total = this.logs.length;
+            this.logStats.errors = this.logs.filter(log => log.level === 'ERROR' || log.level === 'CRITICAL').length;
+            this.logStats.warnings = this.logs.filter(log => log.level === 'WARNING').length;
+            
+            // Count logs in the last minute
+            const oneMinuteAgo = Date.now() - 60000;
+            this.logStats.lastMinute = this.logs.filter(log => log.timestamp > oneMinuteAgo).length;
+        },
+        
+        applyAdvancedFilters() {
+            this.filterLogs();
+            this.showAdvancedFilters = false;
+        }
+    }
+}
+</script>
+{% endblock %}

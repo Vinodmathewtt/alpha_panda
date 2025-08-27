@@ -1,0 +1,54 @@
+# Mean Reversion Strategy Configuration
+# Mean reversion strategy for large cap stable stocks
+
+strategy_name: "mean_reversion_strategy"
+strategy_type: "mean_reversion"
+
+# Routing Configuration - NEW LOGIC  
+# Paper trading receives all signals by default when enabled
+# Zerodha trading only receives signals from strategies with zerodha_trade=true
+routing:
+  zerodha_trade: false    # This strategy will NOT send signals to live trading
+  routing_reason: "testing_phase" 
+  risk_profile: "paper"
+  # paper_trade removed - all signals go to paper trading by default
+
+# Strategy Parameters
+parameters:
+  lookback_period: 50
+  deviation_threshold: 2.0
+  position_size_pct: 0.05
+  bollinger_period: 20
+  bollinger_std: 2
+  base_quantity: 25
+  mean_revert_threshold: 1.5
+  volume_confirmation: true
+  min_volume_ratio: 1.2
+  signal_validity_period: 10   # Minutes between signals for same instrument
+
+# Risk Management Settings
+risk_limits:
+  max_daily_loss: 3000
+  max_position_per_stock: 250
+  max_total_exposure: 15000
+  stop_loss_percentage: 0.025
+  take_profit_percentage: 0.04
+
+# Performance Monitoring
+monitoring:
+  track_performance: true
+  log_signals: true
+  alert_on_loss: true
+  daily_reports: false
+
+# Target Instruments (Large cap stable stocks)
+# Format: instrument_token  # symbol_name
+instruments:
+  - 1346049   # ADANIPORTS
+  - 2939649   # NTPC
+  - 140033    # BHARTIARTL
+  - 3050241   # POWERGRID
+  - 1195009   # M&M
+  - 857857    # WIPRO
+  - 424961    # COALINDIA
+  - 408065    # BAJFINANCE

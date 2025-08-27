@@ -1,0 +1,167 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alphaPT"
+version = "0.1.0"
+description = "High-performance algorithmic trading application"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+authors = [
+    {name = "AlphaPT Team"},
+]
+keywords = ["trading", "algorithmic", "finance", "zerodha"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    # Core dependencies
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    
+    # Database dependencies
+    "asyncpg>=0.29.0",
+    "clickhouse-connect>=0.6.23",
+    "redis>=5.0.1",
+    "sqlalchemy>=2.0.23",
+    "alembic>=1.13.0",
+    
+    # Event system
+    "nats-py>=2.6.0",
+    
+    # Market data and trading
+    "kiteconnect>=4.2.0",
+    "pandas>=2.1.4",
+    "numpy>=1.25.2",
+    
+    # Monitoring and observability
+    "prometheus-client>=0.19.0",
+    "structlog>=23.2.0",
+    "psutil>=5.9.0",
+    
+    # Utilities
+    "pyyaml>=6.0.1",
+    "python-multipart>=0.0.6",
+    "httpx>=0.25.2",
+    "tenacity>=8.2.3",
+    "asyncio-mqtt>=0.16.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.3",
+    "pytest-asyncio>=0.21.1",
+    "pytest-cov>=4.1.0",
+    "black>=23.11.0",
+    "isort>=5.12.0",
+    "flake8>=6.1.0",
+    "mypy>=1.7.1",
+    "pre-commit>=3.6.0",
+]
+
+test = [
+    "pytest>=7.4.3",
+    "pytest-asyncio>=0.21.1",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.25.2",
+    "factory-boy>=3.3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/alphaPT"
+Repository = "https://github.com/yourusername/alphaPT"
+Issues = "https://github.com/yourusername/alphaPT/issues"
+
+[project.scripts]
+alphaPT = "main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "core", "api", "app", "storage",
+    "paper_trade", "zerodha_trade", 
+    "strategy_manager", "risk_manager",
+    "mock_market_feed", "zerodha_market_feed",
+    "instrument_data", "monitoring"
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "performance: marks tests as performance tests",
+]
+
+[tool.coverage.run]
+source = [
+    "core", "api", "app", "storage",
+    "paper_trade", "zerodha_trade", 
+    "strategy_manager", "risk_manager",
+    "mock_market_feed", "zerodha_market_feed",
+    "instrument_data", "monitoring"
+]
+omit = ["tests/*", "*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

@@ -1,0 +1,14 @@
+# Momentum Strategy Configuration
+strategy_name: 'Momentum_NIFTY_1'
+strategy_class: 'MomentumStrategy'
+module_name: 'strategies.momentum'
+instrument_tokens: [256265, 260105]  # NIFTY 50, BANKNIFTY
+parameters:
+  lookback_period: 20
+  momentum_threshold: 0.02
+  stop_loss_percent: 0.05
+  take_profit_percent: 0.10
+  max_position_size: 100
+  max_history: 200
+brokers: ['paper', 'zerodha']  # Enable for both paper and zerodha trading
+enabled: true

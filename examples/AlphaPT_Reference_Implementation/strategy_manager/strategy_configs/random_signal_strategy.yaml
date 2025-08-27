@@ -1,0 +1,40 @@
+# Random Signal Strategy Configuration  
+# Random signal generation for comprehensive framework testing
+
+strategy_name: "random_signal_test"
+strategy_type: "random_signal"
+description: "Random signal strategy for comprehensive framework testing"
+
+# Instrument configuration - smaller set for focused testing
+instruments:
+  - 1270529   # HDFC
+  - 177665    # ITC
+
+# Strategy parameters - configured for controlled randomness
+parameters:
+  signal_probability: 0.002       # 0.2% chance per tick (higher for testing)
+  exit_probability: 0.01          # 1% chance to exit per tick
+  buy_sell_ratio: 0.5             # 50% buy, 50% sell
+  min_quantity: 1
+  max_quantity: 8
+  max_position_per_instrument: 40
+  signal_cooldown_seconds: 10     # Very short cooldown for testing
+  random_seed: 42                 # Fixed seed for reproducible testing
+
+# Routing configuration - NEW LOGIC
+routing:
+  zerodha_trade: true    # This strategy WILL send signals to live trading (if enabled)
+  # paper_trade removed - all signals go to paper trading by default
+
+# Risk limits
+risk_limits:
+  max_position_per_stock: 40
+  max_daily_loss: 2000
+  max_total_exposure: 8000
+
+# Monitoring configuration
+monitoring:
+  enable_detailed_logging: true
+  track_performance_metrics: true
+  health_check_interval: 30
+  track_signal_distribution: true

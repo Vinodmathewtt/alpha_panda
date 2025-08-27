@@ -1,0 +1,1 @@
+"""Contract tests for AlphaPT component interfaces and API contracts."""

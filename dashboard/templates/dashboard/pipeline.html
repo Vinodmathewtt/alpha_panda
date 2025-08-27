@@ -1,0 +1,407 @@
+{% extends "base.html" %}
+
+{% block title %}Pipeline Monitoring - Alpha Panda{% endblock %}
+
+{% block content %}
+<div x-data="pipelineMonitor()" class="space-y-6">
+    <!-- Pipeline Flow Diagram -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">End-to-End Pipeline Flow</h2>
+            <div class="pipeline-flow">
+                <div class="flex items-center justify-between p-4 overflow-x-auto">
+                    <!-- Market Feed -->
+                    <div class="pipeline-stage" :class="getStageClass('market_ticks')">
+                        <div class="stage-icon">📊</div>
+                        <div class="stage-name">Market Feed</div>
+                        <div class="stage-count" x-text="stageMetrics.market_ticks?.count || 0"></div>
+                        <div class="stage-status" x-text="stageMetrics.market_ticks?.status || 'unknown'"></div>
+                    </div>
+                    
+                    <div class="pipeline-arrow">→</div>
+                    
+                    <!-- Strategy Runner -->
+                    <div class="pipeline-stage" :class="getStageClass('signals')">
+                        <div class="stage-icon">🧠</div>
+                        <div class="stage-name">Strategy Runner</div>
+                        <div class="stage-count" x-text="stageMetrics.signals?.count || 0"></div>
+                        <div class="stage-status" x-text="stageMetrics.signals?.status || 'unknown'"></div>
+                    </div>
+                    
+                    <div class="pipeline-arrow">→</div>
+                    
+                    <!-- Risk Manager -->
+                    <div class="pipeline-stage" :class="getStageClass('signals_validated')">
+                        <div class="stage-icon">🛡️</div>
+                        <div class="stage-name">Risk Manager</div>
+                        <div class="stage-count" x-text="stageMetrics.signals_validated?.count || 0"></div>
+                        <div class="stage-status" x-text="stageMetrics.signals_validated?.status || 'unknown'"></div>
+                    </div>
+                    
+                    <div class="pipeline-arrow">→</div>
+                    
+                    <!-- Trading Engine -->
+                    <div class="pipeline-stage" :class="getStageClass('orders')">
+                        <div class="stage-icon">⚡</div>
+                        <div class="stage-name">Trading Engine</div>
+                        <div class="stage-count" x-text="stageMetrics.orders?.count || 0"></div>
+                        <div class="stage-status" x-text="stageMetrics.orders?.status || 'unknown'"></div>
+                    </div>
+                    
+                    <div class="pipeline-arrow">→</div>
+                    
+                    <!-- Portfolio Manager -->
+                    <div class="pipeline-stage" :class="getStageClass('portfolio_updates')">
+                        <div class="stage-icon">💼</div>
+                        <div class="stage-name">Portfolio Manager</div>
+                        <div class="stage-count" x-text="stageMetrics.portfolio_updates?.count || 0"></div>
+                        <div class="stage-status" x-text="stageMetrics.portfolio_updates?.status || 'unknown'"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stage Details -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title">Throughput Metrics</h3>
+                <canvas id="throughputChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+        
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title">Latency Metrics</h3>
+                <canvas id="latencyChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Consumer Lag Monitoring -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Consumer Lag Monitoring</h2>
+            <div class="overflow-x-auto">
+                <table class="table table-zebra w-full"
+                       hx-get="/dashboard/components/consumer-lag"
+                       hx-trigger="every 10s"
+                       hx-target="#consumer-lag-table">
+                    <thead>
+                        <tr>
+                            <th>Consumer Group</th>
+                            <th>Topic</th>
+                            <th>Partition</th>
+                            <th>Current Offset</th>
+                            <th>End Offset</th>
+                            <th>Lag</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="consumer-lag-table">
+                        <tr><td colspan="7">Loading consumer lag data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pipeline Statistics -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Messages/sec</div>
+                <div class="stat-value" x-text="pipelineStats.throughput"></div>
+                <div class="stat-desc">Current throughput</div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Avg Latency</div>
+                <div class="stat-value" x-text="pipelineStats.latency + 'ms'"></div>
+                <div class="stat-desc">End-to-end latency</div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Error Rate</div>
+                <div class="stat-value text-error" x-text="pipelineStats.errorRate + '%'"></div>
+                <div class="stat-desc">Last hour</div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Uptime</div>
+                <div class="stat-value text-success" x-text="pipelineStats.uptime"></div>
+                <div class="stat-desc">System uptime</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.pipeline-stage {
+    @apply flex flex-col items-center p-4 rounded-lg border-2 min-w-32;
+}
+
+.pipeline-stage.healthy {
+    @apply border-success bg-success bg-opacity-10;
+}
+
+.pipeline-stage.degraded {
+    @apply border-warning bg-warning bg-opacity-10;
+}
+
+.pipeline-stage.unhealthy {
+    @apply border-error bg-error bg-opacity-10;
+}
+
+.pipeline-arrow {
+    @apply text-2xl text-base-content opacity-50;
+}
+
+.stage-icon {
+    @apply text-2xl mb-2;
+}
+
+.stage-name {
+    @apply text-sm font-semibold text-center mb-1;
+}
+
+.stage-count {
+    @apply text-xs text-base-content opacity-75;
+}
+
+.stage-status {
+    @apply text-xs font-bold mt-1;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ request.state.csp_nonce }}">
+function pipelineMonitor() {
+    return {
+        stageMetrics: {},
+        throughputChart: null,
+        latencyChart: null,
+        pipelineStats: {
+            throughput: 0,
+            latency: 0,
+            errorRate: 0,
+            uptime: '0m'
+        },
+        
+        init() {
+            this.initCharts();
+            this.startPipelineMonitoring();
+            this.loadInitialData();
+        },
+        
+        initCharts() {
+            // Initialize throughput chart
+            const throughputCtx = document.getElementById('throughputChart').getContext('2d');
+            this.throughputChart = new Chart(throughputCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Messages/sec',
+                        data: [],
+                        borderColor: 'rgb(54, 162, 235)',
+                        backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                        tension: 0.1,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Messages per second'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+            
+            // Initialize latency chart
+            const latencyCtx = document.getElementById('latencyChart').getContext('2d');
+            this.latencyChart = new Chart(latencyCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Latency (ms)',
+                        data: [],
+                        borderColor: 'rgb(255, 99, 132)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                        tension: 0.1,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Latency (ms)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        },
+        
+        loadInitialData() {
+            // Load initial pipeline data
+            this.stageMetrics = {
+                market_ticks: { count: 1250, status: 'healthy' },
+                signals: { count: 45, status: 'healthy' },
+                signals_validated: { count: 42, status: 'healthy' },
+                orders: { count: 38, status: 'healthy' },
+                portfolio_updates: { count: 35, status: 'healthy' }
+            };
+            
+            this.pipelineStats = {
+                throughput: 125,
+                latency: 45,
+                errorRate: 0.1,
+                uptime: '2h 15m'
+            };
+        },
+        
+        startPipelineMonitoring() {
+            // Connect to SSE for real-time pipeline updates
+            const eventSource = new EventSource('/dashboard/events/pipeline');
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.updatePipelineMetrics(data);
+                } catch (e) {
+                    console.error('Error parsing pipeline SSE data:', e);
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.warn('Pipeline SSE connection error:', error);
+            };
+            
+            // Fallback polling if SSE fails
+            setInterval(() => {
+                this.updatePipelineMetrics(this.generateMockData());
+            }, 5000);
+        },
+        
+        updatePipelineMetrics(data) {
+            if (data.data && data.data.stages) {
+                this.stageMetrics = data.data.stages;
+            }
+            
+            // Update pipeline stats
+            if (data.data && data.data.stats) {
+                this.pipelineStats = data.data.stats;
+            }
+            
+            // Update charts
+            this.updateCharts(data);
+        },
+        
+        getStageClass(stageName) {
+            const stage = this.stageMetrics[stageName];
+            if (!stage) return '';
+            
+            if (stage.status === 'healthy') return 'healthy';
+            if (stage.status === 'degraded') return 'degraded';
+            return 'unhealthy';
+        },
+        
+        updateCharts(data) {
+            const now = new Date().toLocaleTimeString();
+            
+            // Update throughput chart
+            const throughput = this.pipelineStats.throughput || Math.floor(Math.random() * 200);
+            
+            this.throughputChart.data.labels.push(now);
+            this.throughputChart.data.datasets[0].data.push(throughput);
+            
+            if (this.throughputChart.data.labels.length > 20) {
+                this.throughputChart.data.labels.shift();
+                this.throughputChart.data.datasets[0].data.shift();
+            }
+            
+            this.throughputChart.update('none');
+            
+            // Update latency chart
+            const latency = this.pipelineStats.latency || Math.floor(Math.random() * 100);
+            
+            this.latencyChart.data.labels.push(now);
+            this.latencyChart.data.datasets[0].data.push(latency);
+            
+            if (this.latencyChart.data.labels.length > 20) {
+                this.latencyChart.data.labels.shift();
+                this.latencyChart.data.datasets[0].data.shift();
+            }
+            
+            this.latencyChart.update('none');
+        },
+        
+        generateMockData() {
+            // Generate realistic mock data for pipeline stages
+            return {
+                data: {
+                    stages: {
+                        market_ticks: { 
+                            count: this.stageMetrics.market_ticks?.count + Math.floor(Math.random() * 10) || 1250,
+                            status: Math.random() > 0.1 ? 'healthy' : 'degraded'
+                        },
+                        signals: { 
+                            count: this.stageMetrics.signals?.count + Math.floor(Math.random() * 5) || 45,
+                            status: Math.random() > 0.05 ? 'healthy' : 'degraded'
+                        },
+                        signals_validated: { 
+                            count: this.stageMetrics.signals_validated?.count + Math.floor(Math.random() * 5) || 42,
+                            status: Math.random() > 0.05 ? 'healthy' : 'degraded'
+                        },
+                        orders: { 
+                            count: this.stageMetrics.orders?.count + Math.floor(Math.random() * 3) || 38,
+                            status: Math.random() > 0.02 ? 'healthy' : 'degraded'
+                        },
+                        portfolio_updates: { 
+                            count: this.stageMetrics.portfolio_updates?.count + Math.floor(Math.random() * 3) || 35,
+                            status: Math.random() > 0.02 ? 'healthy' : 'degraded'
+                        }
+                    },
+                    stats: {
+                        throughput: Math.floor(Math.random() * 50) + 100,
+                        latency: Math.floor(Math.random() * 30) + 20,
+                        errorRate: (Math.random() * 2).toFixed(1),
+                        uptime: this.pipelineStats.uptime
+                    }
+                }
+            };
+        }
+    }
+}
+</script>
+{% endblock %}

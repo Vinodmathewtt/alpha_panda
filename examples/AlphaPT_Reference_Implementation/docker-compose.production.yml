@@ -1,0 +1,306 @@
+version: '3.8'
+
+services:
+  # Main AlphaPT Application
+  alphapt-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: alphapt:production
+    container_name: alphapt-trading-engine
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - DATABASE_URL=postgresql://alphapt_user:${DATABASE_PASSWORD}@postgres:5432/alphapt_db
+      - REDIS_URL=redis://redis:6379
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - NATS_URL=nats://nats:4222
+      - PROMETHEUS_PORT=9090
+      - API_SERVER_PORT=8000
+      - WEBSOCKET_PORT=8001
+      - MOCK_MARKET_FEED=false
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - ZERODHA_API_KEY=${ZERODHA_API_KEY}
+      - ZERODHA_API_SECRET=${ZERODHA_API_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+    ports:
+      - "8000:8000"  # API
+      - "8001:8001"  # WebSocket
+      - "9090:9090"  # Metrics
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    networks:
+      - alphapt-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # API Server (Separate instance for load balancing)
+  alphapt-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: alphapt:production
+    container_name: alphapt-api-server
+    restart: unless-stopped
+    command: ["python", "api/api_server.py"]
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - DATABASE_URL=postgresql://alphapt_user:${DATABASE_PASSWORD}@postgres:5432/alphapt_db
+      - REDIS_URL=redis://redis:6379
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - NATS_URL=nats://nats:4222
+      - API_SERVER_PORT=8000
+      - WEBSOCKET_PORT=8001
+    ports:
+      - "8002:8000"  # API on different port
+      - "8003:8001"  # WebSocket on different port
+    depends_on:
+      - alphapt-app
+    networks:
+      - alphapt-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: alphapt-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=alphapt_db
+      - POSTGRES_USER=alphapt_user
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init_postgresql.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - alphapt-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alphapt_user -d alphapt_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: alphapt-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - alphapt-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ClickHouse Analytics
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: alphapt-clickhouse
+    restart: unless-stopped
+    environment:
+      - CLICKHOUSE_DB=alphapt_analytics
+      - CLICKHOUSE_USER=alphapt_user
+      - CLICKHOUSE_PASSWORD=${DATABASE_PASSWORD}
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./database/init_clickhouse.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./database/clickhouse-config.xml:/etc/clickhouse-server/config.xml:ro
+    networks:
+      - alphapt-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.5'
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NATS JetStream
+  nats:
+    image: nats:2.10-alpine
+    container_name: alphapt-nats
+    restart: unless-stopped
+    command: [
+      "--jetstream",
+      "--store_dir=/data",
+      "--max_memory_store=1GB",
+      "--max_file_store=10GB"
+    ]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    networks:
+      - alphapt-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: alphapt-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    ports:
+      - "9091:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus-rules.yaml:/etc/prometheus/rules.yaml:ro
+    depends_on:
+      - alphapt-app
+    networks:
+      - alphapt-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  # Alertmanager
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alphapt-alertmanager
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    ports:
+      - "9093:9093"
+    volumes:
+      - alertmanager_data:/alertmanager
+      - ./monitoring/alertmanager-config.yaml:/etc/alertmanager/config.yml:ro
+    depends_on:
+      - prometheus
+    networks:
+      - alphapt-network
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: alphapt-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - alphapt-network
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: alphapt-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - alphapt-app
+      - alphapt-api
+    networks:
+      - alphapt-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  clickhouse_data:
+    driver: local
+  nats_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  alphapt-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

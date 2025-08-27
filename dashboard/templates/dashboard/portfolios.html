@@ -1,0 +1,586 @@
+{% extends "base.html" %}
+
+{% block title %}Portfolio Analytics - Alpha Panda{% endblock %}
+
+{% block content %}
+<div x-data="portfolioAnalytics()" class="space-y-6">
+    <!-- Portfolio Overview Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-figure text-primary">
+                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"></path>
+                    </svg>
+                </div>
+                <div class="stat-title">Total Value</div>
+                <div class="stat-value" :class="portfolioSummary.totalValue >= 0 ? 'text-success' : 'text-error'" x-text="formatCurrency(portfolioSummary.totalValue)"></div>
+                <div class="stat-desc">Portfolio value</div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-figure text-secondary">
+                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="stat-title">Today's P&L</div>
+                <div class="stat-value" :class="portfolioSummary.dailyPnL >= 0 ? 'text-success' : 'text-error'" x-text="formatCurrency(portfolioSummary.dailyPnL)"></div>
+                <div class="stat-desc" x-text="`${portfolioSummary.dailyPnLPercent >= 0 ? '+' : ''}${portfolioSummary.dailyPnLPercent.toFixed(2)}%`"></div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-figure text-info">
+                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="stat-title">Active Positions</div>
+                <div class="stat-value text-info" x-text="portfolioSummary.activePositions"></div>
+                <div class="stat-desc">Open positions</div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-figure text-accent">
+                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M12 7a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0V8.414l-4.293 4.293a1 1 0 01-1.414 0L8 10.414l-4.293 4.293a1 1 0 01-1.414-1.414l5-5a1 1 0 011.414 0L11 10.586 14.586 7H12z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="stat-title">Win Rate</div>
+                <div class="stat-value text-accent" x-text="`${portfolioSummary.winRate.toFixed(1)}%`"></div>
+                <div class="stat-desc">Success ratio</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Time Period Selector -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex flex-wrap gap-4 items-center justify-between">
+                <h2 class="card-title">Portfolio Performance</h2>
+                <div class="flex gap-2">
+                    <div class="join">
+                        <button class="join-item btn btn-sm" :class="timePeriod === '1D' ? 'btn-primary' : 'btn-outline'" @click="setTimePeriod('1D')">1D</button>
+                        <button class="join-item btn btn-sm" :class="timePeriod === '1W' ? 'btn-primary' : 'btn-outline'" @click="setTimePeriod('1W')">1W</button>
+                        <button class="join-item btn btn-sm" :class="timePeriod === '1M' ? 'btn-primary' : 'btn-outline'" @click="setTimePeriod('1M')">1M</button>
+                        <button class="join-item btn btn-sm" :class="timePeriod === '3M' ? 'btn-primary' : 'btn-outline'" @click="setTimePeriod('3M')">3M</button>
+                        <button class="join-item btn btn-sm" :class="timePeriod === '1Y' ? 'btn-primary' : 'btn-outline'" @click="setTimePeriod('1Y')">1Y</button>
+                    </div>
+                    <button class="btn btn-outline btn-sm" @click="exportPortfolioData()">
+                        <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                        Export
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Portfolio Performance Chart -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div id="portfolioPerformanceChart" style="height: 400px;"></div>
+        </div>
+    </div>
+
+    <!-- Asset Allocation and Recent Trades -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Asset Allocation Pie Chart -->
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title">Asset Allocation</h3>
+                <div id="assetAllocationChart" style="height: 300px;"></div>
+            </div>
+        </div>
+        
+        <!-- Recent Trades -->
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title">Recent Trades</h3>
+                <div class="overflow-x-auto max-h-80">
+                    <table class="table table-zebra w-full">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>P&L</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="trade in recentTrades" :key="trade.id">
+                                <tr>
+                                    <td class="text-xs" x-text="formatTime(trade.timestamp)"></td>
+                                    <td class="font-semibold" x-text="trade.symbol"></td>
+                                    <td>
+                                        <span class="badge" :class="trade.side === 'BUY' ? 'badge-success' : 'badge-error'" x-text="trade.side"></span>
+                                    </td>
+                                    <td x-text="trade.quantity"></td>
+                                    <td x-text="formatCurrency(trade.price)"></td>
+                                    <td :class="trade.pnl >= 0 ? 'text-success' : 'text-error'" x-text="formatCurrency(trade.pnl)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Current Positions -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Current Positions</h2>
+            <div class="overflow-x-auto">
+                <table class="table table-zebra w-full">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Quantity</th>
+                            <th>Avg Cost</th>
+                            <th>Current Price</th>
+                            <th>Market Value</th>
+                            <th>Unrealized P&L</th>
+                            <th>% Change</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="position in currentPositions" :key="position.symbol">
+                            <tr>
+                                <td class="font-bold" x-text="position.symbol"></td>
+                                <td x-text="position.quantity"></td>
+                                <td x-text="formatCurrency(position.avgCost)"></td>
+                                <td x-text="formatCurrency(position.currentPrice)"></td>
+                                <td x-text="formatCurrency(position.marketValue)"></td>
+                                <td :class="position.unrealizedPnL >= 0 ? 'text-success' : 'text-error'" x-text="formatCurrency(position.unrealizedPnL)"></td>
+                                <td :class="position.percentChange >= 0 ? 'text-success' : 'text-error'" x-text="`${position.percentChange >= 0 ? '+' : ''}${position.percentChange.toFixed(2)}%`"></td>
+                                <td>
+                                    <button class="btn btn-xs btn-outline btn-error" @click="closePosition(position.symbol)">Close</button>
+                                </td>
+                            </tr>
+                        </template>
+                        <tr x-show="currentPositions.length === 0">
+                            <td colspan="8" class="text-center text-base-content opacity-50">No open positions</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance Analytics -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Risk Metrics -->
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title">Risk Metrics</h3>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm">Sharpe Ratio</span>
+                        <span class="font-semibold" x-text="riskMetrics.sharpeRatio.toFixed(2)"></span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm">Max Drawdown</span>
+                        <span class="font-semibold text-error" x-text="`${riskMetrics.maxDrawdown.toFixed(2)}%`"></span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm">Volatility</span>
+                        <span class="font-semibold" x-text="`${riskMetrics.volatility.toFixed(2)}%`"></span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm">Beta</span>
+                        <span class="font-semibold" x-text="riskMetrics.beta.toFixed(2)"></span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm">Value at Risk (95%)</span>
+                        <span class="font-semibold text-warning" x-text="formatCurrency(riskMetrics.valueAtRisk)"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Performance Attribution -->
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title">Performance Attribution</h3>
+                <div id="performanceAttributionChart" style="height: 250px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ request.state.csp_nonce }}">
+function portfolioAnalytics() {
+    return {
+        timePeriod: '1M',
+        portfolioSummary: {
+            totalValue: 150000,
+            dailyPnL: 2450,
+            dailyPnLPercent: 1.65,
+            activePositions: 12,
+            winRate: 68.5
+        },
+        currentPositions: [],
+        recentTrades: [],
+        riskMetrics: {
+            sharpeRatio: 1.45,
+            maxDrawdown: -8.5,
+            volatility: 15.2,
+            beta: 1.12,
+            valueAtRisk: -3500
+        },
+        performanceChart: null,
+        allocationChart: null,
+        attributionChart: null,
+        
+        init() {
+            this.loadPortfolioData();
+            this.initializeCharts();
+            this.startRealTimeUpdates();
+        },
+        
+        loadPortfolioData() {
+            // Load mock portfolio data
+            this.currentPositions = [
+                {
+                    symbol: 'AAPL',
+                    quantity: 100,
+                    avgCost: 145.50,
+                    currentPrice: 152.30,
+                    marketValue: 15230,
+                    unrealizedPnL: 680,
+                    percentChange: 4.67
+                },
+                {
+                    symbol: 'GOOGL',
+                    quantity: 25,
+                    avgCost: 2450.00,
+                    currentPrice: 2485.50,
+                    marketValue: 62137.50,
+                    unrealizedPnL: 887.50,
+                    percentChange: 1.45
+                },
+                {
+                    symbol: 'MSFT',
+                    quantity: 75,
+                    avgCost: 285.20,
+                    currentPrice: 290.85,
+                    marketValue: 21813.75,
+                    unrealizedPnL: 423.75,
+                    percentChange: 1.98
+                },
+                {
+                    symbol: 'TSLA',
+                    quantity: 50,
+                    avgCost: 220.00,
+                    currentPrice: 215.50,
+                    marketValue: 10775,
+                    unrealizedPnL: -225,
+                    percentChange: -2.05
+                }
+            ];
+            
+            this.recentTrades = [
+                {
+                    id: 1,
+                    timestamp: Date.now() - 1000 * 60 * 15,
+                    symbol: 'AAPL',
+                    side: 'BUY',
+                    quantity: 25,
+                    price: 152.30,
+                    pnl: 170
+                },
+                {
+                    id: 2,
+                    timestamp: Date.now() - 1000 * 60 * 45,
+                    symbol: 'MSFT',
+                    side: 'SELL',
+                    quantity: 25,
+                    price: 290.85,
+                    pnl: 140.63
+                },
+                {
+                    id: 3,
+                    timestamp: Date.now() - 1000 * 60 * 120,
+                    symbol: 'GOOGL',
+                    side: 'BUY',
+                    quantity: 5,
+                    price: 2485.50,
+                    pnl: 0
+                }
+            ];
+        },
+        
+        initializeCharts() {
+            // Portfolio Performance Chart
+            this.createPerformanceChart();
+            
+            // Asset Allocation Chart
+            this.createAssetAllocationChart();
+            
+            // Performance Attribution Chart
+            this.createPerformanceAttributionChart();
+        },
+        
+        createPerformanceChart() {
+            const performanceData = this.generatePerformanceData();
+            
+            const trace = {
+                x: performanceData.dates,
+                y: performanceData.values,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Portfolio Value',
+                line: {
+                    color: '#10b981',
+                    width: 2
+                },
+                fill: 'tonexty',
+                fillcolor: 'rgba(16, 185, 129, 0.1)'
+            };
+            
+            const layout = {
+                title: {
+                    text: 'Portfolio Performance Over Time',
+                    font: { size: 16 }
+                },
+                xaxis: {
+                    title: 'Date',
+                    gridcolor: '#374151'
+                },
+                yaxis: {
+                    title: 'Portfolio Value ($)',
+                    gridcolor: '#374151'
+                },
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: '#6b7280' },
+                margin: { l: 60, r: 20, t: 40, b: 40 }
+            };
+            
+            Plotly.newPlot('portfolioPerformanceChart', [trace], layout, {
+                responsive: true,
+                displayModeBar: false
+            });
+        },
+        
+        createAssetAllocationChart() {
+            const allocationData = [
+                { label: 'GOOGL', value: 62137.50, color: '#3b82f6' },
+                { label: 'MSFT', value: 21813.75, color: '#10b981' },
+                { label: 'AAPL', value: 15230.00, color: '#f59e0b' },
+                { label: 'TSLA', value: 10775.00, color: '#ef4444' },
+                { label: 'Cash', value: 40043.75, color: '#6b7280' }
+            ];
+            
+            const trace = {
+                labels: allocationData.map(d => d.label),
+                values: allocationData.map(d => d.value),
+                type: 'pie',
+                textinfo: 'label+percent',
+                textposition: 'outside',
+                marker: {
+                    colors: allocationData.map(d => d.color)
+                },
+                hovertemplate: '<b>%{label}</b><br>Value: $%{value:,.0f}<br>Percentage: %{percent}<extra></extra>'
+            };
+            
+            const layout = {
+                showlegend: false,
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: '#6b7280', size: 12 },
+                margin: { l: 20, r: 20, t: 20, b: 20 }
+            };
+            
+            Plotly.newPlot('assetAllocationChart', [trace], layout, {
+                responsive: true,
+                displayModeBar: false
+            });
+        },
+        
+        createPerformanceAttributionChart() {
+            const attributionData = [
+                { strategy: 'Mean Reversion', contribution: 3.2 },
+                { strategy: 'Momentum', contribution: 2.1 },
+                { strategy: 'Pairs Trading', contribution: 1.8 },
+                { strategy: 'Statistical Arbitrage', contribution: -0.5 },
+                { strategy: 'Long Short Equity', contribution: 0.9 }
+            ];
+            
+            const trace = {
+                x: attributionData.map(d => d.strategy),
+                y: attributionData.map(d => d.contribution),
+                type: 'bar',
+                marker: {
+                    color: attributionData.map(d => d.contribution >= 0 ? '#10b981' : '#ef4444')
+                },
+                hovertemplate: '<b>%{x}</b><br>Contribution: %{y}%<extra></extra>'
+            };
+            
+            const layout = {
+                title: {
+                    text: 'Strategy Contribution (%)',
+                    font: { size: 14 }
+                },
+                xaxis: {
+                    title: '',
+                    gridcolor: '#374151'
+                },
+                yaxis: {
+                    title: 'Contribution (%)',
+                    gridcolor: '#374151'
+                },
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: '#6b7280', size: 10 },
+                margin: { l: 50, r: 20, t: 40, b: 80 }
+            };
+            
+            Plotly.newPlot('performanceAttributionChart', [trace], layout, {
+                responsive: true,
+                displayModeBar: false
+            });
+        },
+        
+        generatePerformanceData() {
+            const days = this.getTimeRange();
+            const dates = [];
+            const values = [];
+            let currentValue = 140000;
+            
+            for (let i = days; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                dates.push(date.toISOString().split('T')[0]);
+                
+                // Simulate portfolio growth with some volatility
+                const dailyReturn = (Math.random() - 0.48) * 0.02; // Slight positive bias
+                currentValue *= (1 + dailyReturn);
+                values.push(currentValue);
+            }
+            
+            return { dates, values };
+        },
+        
+        getTimeRange() {
+            const ranges = {
+                '1D': 1,
+                '1W': 7,
+                '1M': 30,
+                '3M': 90,
+                '1Y': 365
+            };
+            return ranges[this.timePeriod] || 30;
+        },
+        
+        setTimePeriod(period) {
+            this.timePeriod = period;
+            this.createPerformanceChart(); // Recreate chart with new time period
+        },
+        
+        startRealTimeUpdates() {
+            // Simulate real-time portfolio updates
+            setInterval(() => {
+                this.updatePortfolioValues();
+            }, 5000);
+        },
+        
+        updatePortfolioValues() {
+            // Simulate price changes
+            this.currentPositions.forEach(position => {
+                const priceChange = (Math.random() - 0.5) * 0.01; // +/- 0.5% max change
+                position.currentPrice *= (1 + priceChange);
+                position.marketValue = position.quantity * position.currentPrice;
+                position.unrealizedPnL = position.marketValue - (position.quantity * position.avgCost);
+                position.percentChange = ((position.currentPrice / position.avgCost) - 1) * 100;
+            });
+            
+            // Update portfolio summary
+            this.updatePortfolioSummary();
+        },
+        
+        updatePortfolioSummary() {
+            const totalMarketValue = this.currentPositions.reduce((sum, pos) => sum + pos.marketValue, 0);
+            const totalUnrealizedPnL = this.currentPositions.reduce((sum, pos) => sum + pos.unrealizedPnL, 0);
+            const cash = 40043.75; // Mock cash balance
+            
+            this.portfolioSummary.totalValue = totalMarketValue + cash;
+            this.portfolioSummary.dailyPnL = totalUnrealizedPnL * 0.3; // Mock daily P&L
+            this.portfolioSummary.dailyPnLPercent = (this.portfolioSummary.dailyPnL / this.portfolioSummary.totalValue) * 100;
+            this.portfolioSummary.activePositions = this.currentPositions.length;
+        },
+        
+        closePosition(symbol) {
+            if (confirm(`Are you sure you want to close the ${symbol} position?`)) {
+                const position = this.currentPositions.find(p => p.symbol === symbol);
+                if (position) {
+                    // Add to recent trades
+                    this.recentTrades.unshift({
+                        id: Date.now(),
+                        timestamp: Date.now(),
+                        symbol: symbol,
+                        side: 'SELL',
+                        quantity: position.quantity,
+                        price: position.currentPrice,
+                        pnl: position.unrealizedPnL
+                    });
+                    
+                    // Remove from positions
+                    this.currentPositions = this.currentPositions.filter(p => p.symbol !== symbol);
+                    
+                    // Update charts
+                    this.createAssetAllocationChart();
+                }
+            }
+        },
+        
+        exportPortfolioData() {
+            const data = {
+                summary: this.portfolioSummary,
+                positions: this.currentPositions,
+                recentTrades: this.recentTrades,
+                riskMetrics: this.riskMetrics,
+                timestamp: new Date().toISOString()
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `portfolio-data-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        },
+        
+        formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD'
+            }).format(amount);
+        },
+        
+        formatTime(timestamp) {
+            return new Date(timestamp).toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+        }
+    }
+}
+</script>
+{% endblock %}

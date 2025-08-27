@@ -1,0 +1,54 @@
+# MANDATORY: All required dependencies from IMPLEMENTATION_PLAN.md
+
+# FastAPI and ASGI server
+fastapi>=0.115.8,<0.116
+uvicorn[standard]==0.24.0
+
+# Pydantic settings and validation
+pydantic>=2.8,<3
+pydantic-settings>=2.10,<3
+
+# Database - PostgreSQL async
+sqlalchemy[asyncio]>=2.0.43
+asyncpg>=0.30.0
+
+# Redis async
+redis[hiredis]==5.0.1
+
+# CRITICAL: aiokafka replaces confluent-kafka completely  
+aiokafka==0.12.0
+
+# Authentication
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.6
+PyJWT==2.8.0
+
+# Dependency injection
+dependency-injector>=4.43,<5
+
+# Structured logging
+structlog==23.2.0
+
+# Utilities
+python-dotenv==1.0.0
+click==8.1.7
+uuid7==0.1.0
+PyYAML>=6.0
+
+# Development and testing (optional)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+ruff==0.1.6
+
+# Additional dependencies found during review
+psutil==7.0.0
+pytz==2024.1
+
+# Missing dependencies for Zerodha integration
+kiteconnect>=4.1.0
+httpx>=0.25.0
+
+# Real-time streaming
+sse-starlette>=1.6.0

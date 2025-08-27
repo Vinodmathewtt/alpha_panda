@@ -1,0 +1,1 @@
+"""Smoke and sanity tests for basic AlphaPT functionality."""

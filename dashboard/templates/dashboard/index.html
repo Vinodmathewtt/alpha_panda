@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+
+{% block title %}System Overview - Alpha Panda{% endblock %}
+
+{% block content %}
+<div x-data="dashboardOverview()" class="space-y-6">
+    <!-- System Status Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">System Health</div>
+                <div id="system-health" class="stat-value" :class="{
+                    'text-success': systemHealth === 'healthy',
+                    'text-warning': systemHealth === 'degraded',
+                    'text-error': systemHealth === 'unhealthy'
+                }" x-text="systemHealth || 'Loading...'"></div>
+                <div class="stat-desc">Last updated: <span x-text="lastUpdate || 'Never'"></span></div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Events Processed</div>
+                <div id="event-count" class="stat-value" x-text="eventsProcessed || 'Loading...'"></div>
+                <div class="stat-desc">Messages per minute</div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Total P&L</div>
+                <div id="portfolio-pnl" class="stat-value text-success" x-text="totalPnl || 'Loading...'"></div>
+                <div class="stat-desc">Across all portfolios</div>
+            </div>
+        </div>
+        
+        <div class="stats shadow">
+            <div class="stat">
+                <div class="stat-title">Broker</div>
+                <div class="stat-value badge badge-primary">{{ broker }}</div>
+                <div class="stat-desc">Current environment</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pipeline Flow Diagram -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Pipeline Flow</h2>
+            <div class="pipeline-flow">
+                <div class="flex items-center justify-between p-4 overflow-x-auto">
+                    <!-- Market Feed -->
+                    <div class="pipeline-stage" :class="getStageClass('market_ticks')">
+                        <div class="stage-icon">📊</div>
+                        <div class="stage-name">Market Feed</div>
+                        <div class="stage-count" x-text="stageMetrics.market_ticks?.count || 0"></div>
+                        <div class="stage-status" x-text="stageMetrics.market_ticks?.status || 'unknown'"></div>
+                    </div>
+                    
+                    <div class="pipeline-arrow">→</div>
+                    
+                    <!-- Strategy Runner -->
+                    <div class="pipeline-stage" :class="getStageClass('signals')">
+                        <div class="stage-icon">🧠</div>
+                        <div class="stage-name">Strategy Runner</div>
+                        <div class="stage-count" x-text="stageMetrics.signals?.count || 0"></div>
+                        <div class="stage-status" x-text="stageMetrics.signals?.status || 'unknown'"></div>
+                    </div>
+                    
+                    <div class="pipeline-arrow">→</div>
+                    
+                    <!-- Risk Manager -->
+                    <div class="pipeline-stage" :class="getStageClass('signals_validated')">
+                        <div class="stage-icon">🛡️</div>
+                        <div class="stage-name">Risk Manager</div>
+                        <div class="stage-count" x-text="stageMetrics.signals_validated?.count || 0"></div>
+                        <div class="stage-status" x-text="stageMetrics.signals_validated?.status || 'unknown'"></div>
+                    </div>
+                    
+                    <div class="pipeline-arrow">→</div>
+                    
+                    <!-- Trading Engine -->
+                    <div class="pipeline-stage" :class="getStageClass('orders')">
+                        <div class="stage-icon">⚡</div>
+                        <div class="stage-name">Trading Engine</div>
+                        <div class="stage-count" x-text="stageMetrics.orders?.count || 0"></div>
+                        <div class="stage-status" x-text="stageMetrics.orders?.status || 'unknown'"></div>
+                    </div>
+                    
+                    <div class="pipeline-arrow">→</div>
+                    
+                    <!-- Portfolio Manager -->
+                    <div class="pipeline-stage" :class="getStageClass('portfolio_updates')">
+                        <div class="stage-icon">💼</div>
+                        <div class="stage-name">Portfolio Manager</div>
+                        <div class="stage-count" x-text="stageMetrics.portfolio_updates?.count || 0"></div>
+                        <div class="stage-status" x-text="stageMetrics.portfolio_updates?.status || 'unknown'"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title">System Performance</h3>
+                <canvas id="performanceChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+        
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title">Message Throughput</h3>
+                <canvas id="throughputChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Real-time Activity Feed -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title flex justify-between items-center">
+                Activity Feed
+                <button class="btn btn-sm btn-outline" @click="clearActivityFeed()">Clear</button>
+            </h2>
+            <div id="activity-feed" 
+                 hx-ext="sse" 
+                 sse-connect="/dashboard/events/activity" 
+                 sse-swap="activity_item" 
+                 hx-swap="afterbegin"
+                 class="max-h-96 overflow-y-auto space-y-2">
+                <!-- Activity items will appear here -->
+                <div class="text-center text-base-content opacity-50 py-4">
+                    Connecting to activity stream...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.pipeline-stage {
+    @apply flex flex-col items-center p-4 rounded-lg border-2 min-w-32 bg-base-200;
+}
+
+.pipeline-stage.healthy {
+    @apply border-success bg-success bg-opacity-10;
+}
+
+.pipeline-stage.degraded {
+    @apply border-warning bg-warning bg-opacity-10;
+}
+
+.pipeline-stage.unhealthy {
+    @apply border-error bg-error bg-opacity-10;
+}
+
+.pipeline-arrow {
+    @apply text-2xl text-base-content opacity-50 mx-2;
+}
+
+.stage-icon {
+    @apply text-2xl mb-2;
+}
+
+.stage-name {
+    @apply text-sm font-semibold text-center mb-1;
+}
+
+.stage-count {
+    @apply text-xs text-base-content opacity-75;
+}
+
+.stage-status {
+    @apply text-xs badge badge-sm;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ request.state.csp_nonce }}">
+function dashboardOverview() {
+    return {
+        systemHealth: 'loading',
+        lastUpdate: null,
+        eventsProcessed: 0,
+        totalPnl: '₹0.00',
+        stageMetrics: {},
+        performanceChart: null,
+        throughputChart: null,
+        
+        init() {
+            this.initCharts();
+            this.startRealTimeUpdates();
+            this.startActivityListener();
+        },
+        
+        initCharts() {
+            // Initialize performance chart
+            const perfCtx = document.getElementById('performanceChart').getContext('2d');
+            this.performanceChart = new Chart(perfCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'CPU Usage %',
+                        data: [],
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }, {
+                        label: 'Memory Usage %',
+                        data: [],
+                        borderColor: 'rgb(255, 99, 132)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+            
+            // Initialize throughput chart
+            const throughputCtx = document.getElementById('throughputChart').getContext('2d');
+            this.throughputChart = new Chart(throughputCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Messages/sec',
+                        data: [],
+                        borderColor: 'rgb(54, 162, 235)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        },
+        
+        startRealTimeUpdates() {
+            // Connect to SSE for health updates
+            const healthEventSource = new EventSource('/dashboard/events/health');
+            
+            healthEventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                this.updateHealthMetrics(data);
+                this.lastUpdate = new Date().toLocaleTimeString();
+            };
+            
+            healthEventSource.onerror = () => {
+                this.systemHealth = 'error';
+            };
+            
+            // Connect to SSE for pipeline updates
+            const pipelineEventSource = new EventSource('/dashboard/events/pipeline');
+            
+            pipelineEventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                this.updatePipelineMetrics(data);
+            };
+        },
+        
+        startActivityListener() {
+            // Listen for HTMX SSE activity events
+            document.body.addEventListener('htmx:sseMessage', (event) => {
+                if (event.detail.type === 'activity_item') {
+                    const activity = JSON.parse(event.detail.data);
+                    this.addActivityItem(activity);
+                }
+            });
+        },
+        
+        updateHealthMetrics(data) {
+            if (data.data && data.data.summary) {
+                this.systemHealth = data.data.summary.healthy >= data.data.summary.total_checks - 1 ? 'healthy' : 'degraded';
+                
+                // Update performance chart
+                this.updatePerformanceChart(data);
+            }
+        },
+        
+        updatePipelineMetrics(data) {
+            if (data.data && data.data.health && data.data.health.stages) {
+                this.stageMetrics = data.data.health.stages;
+                
+                // Update throughput chart
+                this.updateThroughputChart(data);
+                
+                // Calculate events processed
+                const totalEvents = Object.values(this.stageMetrics).reduce((sum, stage) => sum + (stage.count || 0), 0);
+                this.eventsProcessed = totalEvents.toLocaleString();
+            }
+        },
+        
+        updatePerformanceChart(data) {
+            if (!this.performanceChart || !data.data.checks) return;
+            
+            const now = new Date().toLocaleTimeString();
+            const cpuUsage = data.data.checks.cpu_usage?.details?.cpu_percent || 0;
+            const memoryUsage = data.data.checks.memory_usage?.details?.used_percent || 0;
+            
+            this.performanceChart.data.labels.push(now);
+            this.performanceChart.data.datasets[0].data.push(Math.round(cpuUsage));
+            this.performanceChart.data.datasets[1].data.push(Math.round(memoryUsage));
+            
+            // Keep only last 20 data points
+            if (this.performanceChart.data.labels.length > 20) {
+                this.performanceChart.data.labels.shift();
+                this.performanceChart.data.datasets[0].data.shift();
+                this.performanceChart.data.datasets[1].data.shift();
+            }
+            
+            this.performanceChart.update();
+        },
+        
+        updateThroughputChart(data) {
+            if (!this.throughputChart) return;
+            
+            const now = new Date().toLocaleTimeString();
+            const throughput = data.data.throughput || 0;
+            
+            this.throughputChart.data.labels.push(now);
+            this.throughputChart.data.datasets[0].data.push(Math.round(throughput));
+            
+            // Keep only last 20 data points
+            if (this.throughputChart.data.labels.length > 20) {
+                this.throughputChart.data.labels.shift();
+                this.throughputChart.data.datasets[0].data.shift();
+            }
+            
+            this.throughputChart.update();
+        },
+        
+        getStageClass(stageName) {
+            const stage = this.stageMetrics[stageName];
+            if (!stage) return '';
+            
+            if (stage.healthy) return 'healthy';
+            if (stage.status === 'degraded') return 'degraded';
+            return 'unhealthy';
+        },
+        
+        addActivityItem(activity) {
+            const feed = document.getElementById('activity-feed');
+            const item = document.createElement('div');
+            item.className = `alert alert-${activity.type === 'error' ? 'error' : activity.type === 'warning' ? 'warning' : 'info'} p-2`;
+            item.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <div>
+                        <span class="font-medium">${activity.service}:</span>
+                        ${activity.message}
+                    </div>
+                    <div class="text-xs opacity-70">
+                        ${new Date(activity.timestamp * 1000).toLocaleTimeString()}
+                    </div>
+                </div>
+            `;
+            
+            // Remove the "connecting" message if it exists
+            const connectingMsg = feed.querySelector('.text-center');
+            if (connectingMsg) {
+                connectingMsg.remove();
+            }
+            
+            feed.insertBefore(item, feed.firstChild);
+            
+            // Keep only last 20 items
+            while (feed.children.length > 20) {
+                feed.removeChild(feed.lastChild);
+            }
+        },
+        
+        clearActivityFeed() {
+            const feed = document.getElementById('activity-feed');
+            feed.innerHTML = '<div class="text-center text-base-content opacity-50 py-4">Activity feed cleared</div>';
+        }
+    }
+}
+</script>
+{% endblock %}

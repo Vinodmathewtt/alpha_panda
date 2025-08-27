@@ -1,0 +1,17 @@
+# Alpha Panda Dependency Constraints
+# Ensures compatible versions across environments
+
+# Core dependency fixes
+dependency-injector>=4.42.0,<5
+
+# Pin other critical dependencies for stability
+fastapi>=0.104.0,<0.200.0
+pydantic>=2.5.0,<3.0.0
+sqlalchemy>=2.0.0,<2.1.0
+redis>=5.0.0,<6.0.0
+aiokafka>=0.12.0,<0.13.0
+
+# Testing framework stability
+pytest>=7.4.0,<8.0.0
+pytest-asyncio>=0.21.0,<0.22.0
+pytest-cov>=4.1.0,<5.0.0

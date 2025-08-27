@@ -1,0 +1,39 @@
+# Price Threshold Strategy Configuration
+# Simple threshold-based strategy for testing signal generation
+
+strategy_name: "price_threshold_test"
+strategy_type: "price_threshold"
+description: "Price threshold strategy for testing signal generation framework"
+
+# Instrument configuration - using a subset for easy testing
+instruments:
+  - 738561    # RELIANCE
+  - 2714625   # ICICIBANK  
+  - 81153     # TCS
+
+# Strategy parameters - configured for easy triggering
+parameters:
+  upper_threshold_pct: 0.01      # 1% price increase to trigger buy
+  lower_threshold_pct: 0.01      # 1% price decrease to trigger sell
+  exit_threshold_pct: 0.005      # 0.5% for exit signals
+  default_quantity: 5
+  max_position_per_instrument: 25
+  signal_cooldown_seconds: 30    # Short cooldown for testing
+  min_price_movement: 0.001      # 0.1% minimum movement
+
+# Routing configuration - NEW LOGIC
+routing:
+  zerodha_trade: false    # This strategy will NOT send signals to live trading
+  # paper_trade removed - all signals go to paper trading by default
+
+# Risk limits
+risk_limits:
+  max_position_per_stock: 25
+  max_daily_loss: 1000
+  max_total_exposure: 5000
+
+# Monitoring configuration
+monitoring:
+  enable_detailed_logging: true
+  track_performance_metrics: true
+  health_check_interval: 60

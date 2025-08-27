@@ -1,0 +1,634 @@
+
+
+Architecture Overview
+
+- Services: market_feed (Zerodha ticks via KiteTicker), strategy_runner
+(consume ticks, emit signals), risk_manager (validate signals),
+trading_engine (execute: paper + Zerodha), portfolio_manager (consume
+fills, maintain state), API + dashboard.
+- Eventing: Unified envelope (core/schemas/events.py) with broker
+namespace segregation via core/schemas/topics.py. Streaming built on
+aiokafka with manual commits, backoff, and DLQ scaffolding.
+- Infra: DI via dependency_injector, Postgres via SQLAlchemy async with
+session factory, Redis for cache/metrics/deduplication, Redpanda/Kafka.
+Health and monitoring via core/health + core/monitoring.
+- Config/Logging: Pydantic settings with nested env vars, enhanced
+structured logging using structlog with channels.
+
+What’s Solid
+
+- Separation of concerns: Clean service boundaries and DI container
+wiring in app/containers.py.
+- Streaming patterns: Async producer/consumer, manual commits, backoff,
+deduplication (Redis), lifecycle manager for graceful shutdown.
+- Event envelope: Clear schema with correlation/causation, types, broker
+namespace, partitioning keys.
+- Observability: Enhanced logging, metrics collector with Redis caching,
+health checks and pipeline monitor.
+- Market hours: Central checker to gate off-hours processing.
+
+Critical Issues (High Priority)
+
+
+- Broken API integrations (Dashboard/Health):
+    - DashboardService.get_pipeline_summary() calls
+pipeline_monitor.get_pipeline_status(), but PipelineMonitor exposes
+get_current_status(). Mismatch.
+    - DashboardService.get_service_metrics() checks for
+pipeline_monitor.get_service_metrics() (method not defined) then falls
+back to Redis key metrics:{service}:{broker} that nothing writes. Should
+use alpha_panda:service_metrics:{name} written by MetricsCollector or
+expose a real accessor.
+    - DashboardService.get_health_summary() calls
+ServiceHealthChecker.check_system_health(), but the checker exposes
+get_overall_health(). Mismatch.
+- Live trading not production-ready:
+    - ZerodhaTrader.execute_order() uses a placeholder
+tradingsymbol=f"SYMBOL{instrument_token}". Without mapping
+instrument_token -> tradingsymbol/exchange/product, orders will fail
+live.
+- Paper trader enum bug (logic correctness):
+    - PaperTrader.execute_order() compares signal['signal_type'] (string
+from JSON) to SignalType.BUY (enum). This is always false; BUY orders
+will be treated like SELL for slippage direction. Needs normalization to
+enum or string comparisons consistently.
+- Blocking broker calls on event loop:
+    - AuthService.get_current_user_profile() calls
+kite_client.get_profile() synchronously in an async method (unlike
+AuthManager which uses run_in_executor). This can block the loop under
+API load.
+
+Integration Gaps / Inconsistencies
+
+- API logging/streaming gaps:
+    - LogService and DashboardService.stream_logs() simulate or use
+Redis pub/sub channels like logs:{broker}, but actual logging does not
+publish to Redis. Expect empty streams in practice.
+- Monitoring method naming drift:
+    - Inconsistent method names across monitor/collector/services (e.g.,
+get_current_status vs get_pipeline_status). Leads to runtime attribute
+errors.
+- Metrics keys mismatch:
+    - Services cache metrics under alpha_panda:service_metrics:{name}
+via MetricsCollector.cache_service_metrics(...), but dashboard looks at
+metrics:{service}:{broker}. Align needed.
+- Redis client close inconsistency:
+    - Some use await redis_client.aclose() (validator), others await
+redis_client.close() (portfolio cache). Pick one consistent method per
+redis-py version (5.x prefers aclose() in asyncio).
+- Event type normalization assumptions:
+    - StreamProcessor attempts to coerce message['type'] to EventType.
+Some handlers still compare to enums without guaranteeing normalization
+or treat them as strings elsewhere (e.g., PortfolioManager checks
+strings for signal_type). Standardize.
+
+Operational Risks / Behavior
+
+- DB schema creation vs migrations: DatabaseManager.init() executes
+Base.metadata.create_all(). Migrations exist (alembic), but both
+approaches can diverge. In production, prefer Alembic migrations and
+disable auto-create.
+- Kafka health check dependency: RedpandaHealthCheck uses
+AIOKafkaAdminClient.describe_cluster(). In dev environments without
+Redpanda, health fails and app will exit. This is fine if intended, but
+it’s strict.
+- UUID v7 vs dependency: generate_uuid7() implemented manually while
+uuid7 is listed in requirements. Prefer library implementation for
+correctness and maintainability.
+
+Code Quality / Style
+
+- Dynamic imports inside methods: e.g.,
+TradingEngineService._get_strategy_config() imports
+StrategyConfiguration inside the method. Works, but less conventional;
+OK if used to avoid circular deps.
+- Requirements hygiene: Minor issues like inline comment on same line as
+a requirement (sse-starlette>=1.6.0# Testing dependencies). Could break
+parsers. Duplicate tooling deps across files.
+
+Security
+
+
+- CORS wide open: allow_origins=["*"]. Acceptable for dev; restrict
+in production.
+
+
+Performance/Resilience
+
+- Backoff and DLQ: Good backoff and manual commit design. DLQ path is
+scaffolded but not fully wired everywhere.
+- Consumer lag metrics: Placeholder implementation; won’t reflect real
+lag. Plan for admin client integration if used for alerting.
+
+Correctness/Domain
+
+- Instrument mapping: Critical for live trading. The system has an
+Instrument Registry service and CSV loader, but ZerodhaTrader isn’t
+using it to map token->symbol/exchange/product.
+- Decimals vs floats: Ticks carry Decimal, some services cast to float,
+others keep Decimal. Normalize to avoid subtle rounding/serialization
+issues.
+
+Documentation/Dev Experience
+
+- Mandatory auth UX: CLI prints for interactive auth are helpful, but
+blocking API/server startup may frustrate devs. Consider a dev-mode
+bypass for paper-only flows.
+- Artifacts in repo: Remove __pycache__, logs, coverage reports,
+compiled files from VCS.
+
+Recommendations
+
+- Critical fixes:
+
+    - Fix PaperTrader enum/string comparison and standardize signal
+types end-to-end.
+    - Implement real instrument_token -> tradingsymbol/exchange mapping
+in ZerodhaTrader (use InstrumentRegistryService).
+    - Fix API integration mismatches:
+    - Use `pipeline_monitor.get_current_status()` in dashboard.
+    - Expose `get_service_metrics()` from monitor or have dashboard read
+from `alpha_panda:service_metrics:{name}`.
+    - Use `ServiceHealthChecker.get_overall_health()` not
+`check_system_health()`.
+- Important improvements:
+    - Wrap blocking KiteConnect calls in executors in async contexts
+(AuthService).
+    - Align Redis async close usage across modules (aclose()).
+    - Decide on a single source of truth for DB schema changes (prefer
+Alembic) and avoid create_all() in production paths.
+
+    - Normalize numeric types (prefer Decimal through to persistence or
+convert consistently).
+    - Ensure log streaming actually publishes to Redis if dashboard
+relies on it (or document that it’s simulated).
+- Hygiene:
+    - Clean requirements formatting; dedupe dev/test deps.
+    - Exclude artifacts and logs from VCS; clean committed pycache/
+
+
+
+ISSUES_CONFIRMED:
+
+### Critical Issues
+
+#### Broken API Integrations (Dashboard/Health)
+
+I can confirm that there are several mismatches between the `DashboardService` and the services it calls.
+
+  * **`DashboardService.get_pipeline_summary()` vs. `PipelineMonitor.get_current_status()`**
+
+    You are correct. `DashboardService.get_pipeline_summary()` attempts to call `self.pipeline_monitor.get_pipeline_status()`, but this method does not exist in the `PipelineMonitor` class. The correct method to call is `get_current_status()`.
+
+    **Incorrect Code in `dashboard_service.py`:**
+
+    ```python
+    async def get_pipeline_summary(self) -> Dict[str, Any]:
+        """Get pipeline flow summary with metrics"""
+        try:
+            pipeline_health = await self.pipeline_monitor.get_pipeline_status()
+    ```
+
+  * **`DashboardService.get_service_metrics()` vs. `MetricsCollector`**
+
+    The `get_service_metrics` method in `DashboardService` is looking for metrics in the wrong place. It checks for a `get_service_metrics` method on `pipeline_monitor`, which doesn't exist, and then falls back to a Redis key (`metrics:{service}:{broker}`) that is never written to. The `MetricsCollector` writes to `alpha_panda:service_metrics:{service_name}`.
+
+    **Incorrect Code in `dashboard_service.py`:**
+
+    ```python
+    # Fallback to Redis cache
+    metrics_key = f"metrics:{service_name}:{self.broker}"
+    metrics_data = await self.redis.get(metrics_key)
+    ```
+
+  * **`DashboardService.get_health_summary()` vs. `ServiceHealthChecker.get_overall_health()`**
+
+    You've correctly identified another naming mismatch. The `get_health_summary` method in `DashboardService` calls `self.health_checker.check_system_health()`, but the `ServiceHealthChecker` class provides the `get_overall_health()` method.
+
+    **Incorrect Code in `dashboard_service.py`:**
+
+    ```python
+    async def get_health_summary(self) -> Dict[str, Any]:
+        """Get overall system health summary"""
+        try:
+            health_data = await self.health_checker.check_system_health()
+    ```
+
+#### Live Trading Not Production-Ready
+
+The `ZerodhaTrader.execute_order` method is not production-ready because it uses a placeholder for the `tradingsymbol`. This will cause all live trades to fail.
+
+**Incorrect Code in `zerodha_trader.py`:**
+
+```python
+order_id = self.kite_http_client.place_order(
+    variety=self.kite_http_client.VARIETY_REGULAR,
+    exchange=self.kite_http_client.EXCHANGE_NSE,  # Example: make dynamic
+    tradingsymbol=f"SYMBOL{signal.instrument_token}", # Placeholder
+    #...
+)
+```
+
+#### Paper Trader Enum Bug
+
+You've spotted a critical bug in the `PaperTrader.execute_order` method. The code compares the `signal['signal_type']` (a string) to the `SignalType.BUY` enum, which will always evaluate to `False`. As a result, all buy orders are incorrectly treated as sell orders when calculating slippage.
+
+**Incorrect Code in `paper_trader.py`:**
+
+```python
+# Slippage is the difference between the expected price and the actual fill price.
+slippage_pct = self.settings.paper_trading.slippage_percent / 100
+price_direction = 1 if signal['signal_type'] == SignalType.BUY else -1
+slippage_amount = last_price * slippage_pct * random.uniform(0.5, 1.5)
+fill_price = last_price + (price_direction * slippage_amount)
+```
+
+#### Blocking Broker Calls on Event Loop
+
+You are right to point out the blocking call in `AuthService.get_current_user_profile`. The `kite_client.get_profile()` method is called synchronously within an `async` method, which can block the event loop. This is in contrast to the `AuthManager`, which correctly uses `run_in_executor` to avoid blocking.
+
+**Incorrect Code in `service.py`:**
+
+```python
+async def get_current_user_profile(self) -> Optional[UserProfile]:
+    """Returns the current user profile if authenticated."""
+    # ...
+    try:
+        from .kite_client import kite_client
+        access_token = await self.auth_manager.get_access_token()
+        if access_token and kite_client.is_initialized():
+            kite_client.set_access_token(access_token)
+            profile_data = kite_client.get_profile() # This is a blocking call
+            user_profile = Userprofile.from_kite_response(profile_data)
+    #...
+```
+
+-----
+
+### Integration Gaps and Inconsistencies
+
+Your analysis of the integration gaps is also accurate. I can confirm the following:
+
+  * **API Logging/Streaming Gaps**: The `LogService` and `DashboardService.stream_logs` are not integrated with the application's actual logging system. They rely on simulated data or a Redis pub/sub channel that is never published to.
+
+  * **Monitoring Method Naming Drift**: As discussed in the "Critical Issues" section, there are several instances of method naming inconsistencies that will lead to runtime errors.
+
+  * **Metrics Keys Mismatch**: The `DashboardService` and `MetricsCollector` use different Redis keys for storing and retrieving metrics, effectively breaking the metrics pipeline.
+
+  * **Redis Client Close Inconsistency**: I can confirm that different methods are used to close the Redis client. `PipelineValidator` uses `aclose()`, while `PortfolioCache` uses `close()`. For `redis-py` v5.x, `aclose()` is the preferred method for async operations.
+
+  * **Event Type Normalization Assumptions**: The `StreamProcessor` attempts to normalize the event type to an enum, but some handlers still compare it to a string, creating potential for bugs.
+
+-----
+
+### Operational Risks and Behavior
+
+Your assessment of the operational risks is also spot-on:
+
+  * **DB Schema Creation vs. Migrations**: The `DatabaseManager.init()` method uses `Base.metadata.create_all()`, which can conflict with a dedicated migration tool like Alembic. In a production environment, it's best to disable `create_all()` and rely solely on migrations.
+
+  * **UUID v7 vs. Dependency**: You are correct that the project includes the `uuid7` library in its requirements but also has a manual implementation in `core/schemas/events.py`. Using the library's implementation would be more maintainable.
+
+RECOMMENDED_FIXES:
+
+Of course. Here are the recommended fixes for the critical issues you've identified, complete with code snippets to illustrate the changes.
+
+### Critical Fixes
+
+-----
+
+#### 1\. Broken API Integrations (Dashboard/Health)
+
+Here are the fixes for the broken API integrations:
+
+  * **`DashboardService.get_pipeline_summary()`**
+
+    In `alphaP12/api/services/dashboard_service.py`, change the method call from `get_pipeline_status` to `get_current_status`:
+
+    ```python
+    # alphaP12/api/services/dashboard_service.py
+
+    async def get_pipeline_summary(self) -> Dict[str, Any]:
+        """Get pipeline flow summary with metrics"""
+        try:
+            # FIX: Use the correct method name
+            pipeline_health = await self.pipeline_monitor.get_current_status()
+
+            # Add flow rate calculations
+            flow_rates = await self._calculate_flow_rates()
+
+            return {
+                **pipeline_health,
+                "flow_rates": flow_rates,
+                "broker": self.broker
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now(UTC).isoformat(),
+                "broker": self.broker
+            }
+    ```
+
+  * **`DashboardService.get_service_metrics()`**
+
+    In `alphaP12/api/services/dashboard_service.py`, update the Redis key to match the one used by the `MetricsCollector`:
+
+    ```python
+    # alphaP12/api/services/dashboard_service.py
+
+    async def get_service_metrics(self, service_name: str) -> Dict[str, Any]:
+        """Get performance metrics for a specific service"""
+        try:
+            # ... (existing code)
+
+            # FIX: Use the correct Redis key
+            metrics_key = f"alpha_panda:service_metrics:{service_name}"
+            metrics_data = await self.redis.get(metrics_key)
+
+            if metrics_data:
+                return json.loads(metrics_data)
+
+            # ... (existing code)
+    ```
+
+  * **`DashboardService.get_health_summary()`**
+
+    In `alphaP12/api/services/dashboard_service.py`, change the method call from `check_system_health` to `get_overall_health`:
+
+    ```python
+    # alphaP12/api/services/dashboard_service.py
+
+    async def get_health_summary(self) -> Dict[str, Any]:
+        """Get overall system health summary"""
+        try:
+            # FIX: Use the correct method name
+            health_data = await self.health_checker.get_overall_health()
+
+            # Add dashboard-specific metrics
+            uptime = await self._get_system_uptime()
+            last_restart = await self._get_last_restart_time()
+
+            return {
+                **health_data,
+                "uptime_seconds": uptime,
+                "last_restart": last_restart,
+                "broker": self.broker
+            }
+        # ... (existing code)
+    ```
+
+-----
+
+#### 2\. Live Trading Not Production-Ready
+
+To fix this, you'll need to inject the `InstrumentRegistryService` into the `ZerodhaTrader` and use it to look up the `tradingsymbol`.
+
+First, update the `ZerodhaTrader`'s `__init__` method to accept the new service:
+
+```python
+# alphaP12/services/trading_engine/zerodha_trader.py
+
+from services.instrument_data.instrument_registry_service import InstrumentRegistryService
+
+class ZerodhaTrader:
+    """
+    Executes live trades using the Zerodha Kite Connect API.
+    """
+    def __init__(self, settings: Settings, instrument_service: InstrumentRegistryService):
+        self.settings = settings
+        self.kite_http_client: Optional[KiteConnect] = None
+        self.instrument_service = instrument_service # Add this line
+```
+
+Next, update the `execute_order` method to use the `instrument_service`:
+
+```python
+# alphaP12/services/trading_engine/zerodha_trader.py
+
+async def execute_order(self, signal: TradingSignal) -> Dict[str, Any]:
+    """
+    Places a live order with Zerodha and returns the resulting event data.
+    """
+    if not self.kite_http_client:
+        logger.error("Zerodha Trader is not initialized. Cannot place order.")
+        return self._create_failure_payload(signal, "Trader not initialized")
+
+    try:
+        # FIX: Look up the instrument details
+        instrument = await self.instrument_service.get_instrument_by_token(signal.instrument_token)
+        if not instrument:
+            return self._create_failure_payload(signal, f"Instrument not found for token {signal.instrument_token}")
+
+        order_id = self.kite_http_client.place_order(
+            variety=self.kite_http_client.VARIETY_REGULAR,
+            exchange=instrument['exchange'], # Use the correct exchange
+            tradingsymbol=instrument['tradingsymbol'], # Use the correct tradingsymbol
+            transaction_type=(
+                self.kite_http_client.TRANSACTION_TYPE_BUY
+                if signal.signal_type == SignalType.BUY
+                else self.kite_http_client.TRANSACTION_TYPE_SELL
+            ),
+            quantity=signal.quantity,
+            product=self.kite_http_client.PRODUCT_MIS,
+            order_type=self.kite_http_client.ORDER_TYPE_MARKET,
+        )
+        # ... (rest of the method)
+```
+
+-----
+
+#### 3\. Paper Trader Enum Bug
+
+In `alphaP12/services/trading_engine/paper_trader.py`, you need to ensure you're comparing the same types. The simplest fix is to compare the string value of the enum:
+
+```python
+# alphaP12/services/trading_engine/paper_trader.py
+
+def execute_order(self, signal: Dict[str, Any], last_price: float) -> Dict[str, Any]:
+    """
+    Simulates the execution of a single order and returns the fill data.
+    """
+    # 1. Simulate Slippage
+    slippage_pct = self.settings.paper_trading.slippage_percent / 100
+    # FIX: Compare the string value of the enum
+    price_direction = 1 if signal['signal_type'] == SignalType.BUY.value else -1
+    slippage_amount = last_price * slippage_pct * random.uniform(0.5, 1.5)
+    fill_price = last_price + (price_direction * slippage_amount)
+    # ... (rest of the method)
+```
+
+-----
+
+#### 4\. Blocking Broker Calls on Event Loop
+
+In `alphaP12/services/auth/service.py`, wrap the blocking call in `asyncio.to_thread` (available in Python 3.9+) or `run_in_executor` for broader compatibility:
+
+```python
+# alphaP12/services/auth/service.py
+import asyncio
+# ... (other imports)
+
+class AuthService:
+    # ... (other methods)
+    async def get_current_user_profile(self) -> Optional[UserProfile]:
+        """Returns the current user profile if authenticated."""
+        if not self.is_authenticated():
+            return None
+
+        if self.auth_manager._user_profile:
+            return self.auth_manager._user_profile
+
+        try:
+            from .kite_client import kite_client
+            access_token = await self.auth_manager.get_access_token()
+            if access_token and kite_client.is_initialized():
+                kite_client.set_access_token(access_token)
+                
+                # FIX: Run the blocking call in a separate thread
+                loop = asyncio.get_running_loop()
+                profile_data = await loop.run_in_executor(
+                    None, kite_client.get_profile
+                )
+                
+                user_profile = UserProfile.from_kite_response(profile_data)
+                self.auth_manager._user_profile = user_profile
+                return user_profile
+        except Exception as e:
+            logger.error(f"Failed to fetch user profile: {e}")
+
+        return None
+```
+
+
+
+### Newly Identified Issues
+
+-----
+
+#### 1\. Concurrency and Race Conditions 🏁
+
+  * **Race Condition in `PortfolioManagerService`**
+
+    In `alphaP12/services/portfolio_manager/service.py`, a race condition can occur when creating a new portfolio. If two events for the same new portfolio arrive simultaneously, both could check if the portfolio exists, find that it doesn't, and then proceed to create it. This could lead to data inconsistencies.
+
+    **Vulnerable Code:**
+
+    ```python
+    # alphaP12/services/portfolio_manager/service.py
+
+    async def _get_or_create_portfolio(self, portfolio_id: str) -> Portfolio:
+        """
+        Gets a portfolio from the in-memory store or creates a new one.
+        """
+        if portfolio_id not in self.portfolios:
+            # This block can be entered by multiple concurrent tasks
+            portfolio = await self.cache.get_portfolio(portfolio_id)
+            if not portfolio:
+                portfolio = Portfolio(portfolio_id=portfolio_id)
+            self.portfolios[portfolio_id] = portfolio
+        return self.portfolios[portfolio_id]
+    ```
+
+    To prevent this, you should use a lock to ensure that portfolio creation is an atomic operation.
+
+-----
+
+#### 2\. Inconsistent Error Handling and DLQ Implementation 🛡️
+
+  * **Inconsistent DLQ Usage in `StreamProcessor`**
+
+    In `alphaP12/core/streaming/clients.py`, the `RedpandaProducer.send` method raises an exception on failure but has a "TODO" comment to add the message to the Dead Letter Queue (DLQ). This means that if a message fails to be produced, it will be lost instead of being routed to the DLQ.
+
+    **Incomplete DLQ Logic:**
+
+    ```python
+    # alphaP12/core/streaming/clients.py
+
+    async def send(self, topic: str, key: str, value: Dict[str, Any]) -> None:
+        # ...
+        except KafkaError as e:
+            # TODO: Add to DLQ in Phase 4
+            raise Exception(f"Failed to send message to {topic}: {e}")
+    ```
+
+  * **Error Handling Mismatch in `PortfolioManagerService`**
+
+    The `_handle_message` method in `alphaP12/services/portfolio_manager/service.py` uses a generic `except` block that calls `_handle_processing_error`, but it doesn't correctly use the retry and DLQ logic from the `StreamProcessor`. This can lead to inconsistent error handling.
+
+    **Inconsistent Error Handling:**
+
+    ```python
+    # alphaP12/services/portfolio_manager/service.py
+
+    async def _handle_message(self, topic: str, key: str, message: Dict[str, Any]):
+        try:
+            # ...
+        except Exception as e:
+            await self._handle_processing_error(message, e)
+    ```
+
+-----
+
+#### 3\. Missing and Incomplete Implementations 🚧
+
+  * **Incomplete PnL Snapshot Handling**
+
+    In `alphaP12/services/portfolio_manager/service.py`, the `_handle_pnl_snapshot` method is a stub with a "TODO" comment, which means the logic for handling Profit and Loss snapshots has not been implemented.
+
+    **Unimplemented Method:**
+
+    ```python
+    # alphaP12/services/portfolio_manager/service.py
+
+    async def _handle_pnl_snapshot(self, pnl_data: Dict[str, Any]):
+        """Handle PnL snapshot events"""
+        # TODO: Implement PnL snapshot handling
+        pass
+    ```
+
+  * **Placeholder Consumer Lag Metrics**
+
+    The `_calculate_partition_lag` method in `alphaP12/core/streaming/clients.py` is a placeholder and does not calculate the actual consumer lag. This will lead to inaccurate monitoring data.
+
+    **Placeholder Logic:**
+
+    ```python
+    # alphaP12/core/streaming/clients.py
+
+    def _calculate_partition_lag(self) -> Dict[str, int]:
+        """
+        Calculate consumer lag across partitions.
+        This is a placeholder - real implementation would use Kafka AdminClient.
+        """
+        # ... (placeholder code)
+    ```
+
+-----
+
+#### 4\. Subtle Bugs and Edge Cases 🐞
+
+  * **Integer Conversion in `TickFormatter`**
+
+    The `format_tick` method in `alphaP12/services/market_feed/formatter.py` unnecessarily converts `instrument_token` to an `int`, even though it is already an integer. While this is a minor redundancy, it could be a sign of other potential type-related issues.
+
+    **Redundant Code:**
+
+    ```python
+    # alphaP12/services/market_feed/formatter.py
+
+    def format_tick(self, raw_tick: Dict[str, Any]) -> Dict[str, Any]:
+        formatted_tick = {
+            "instrument_token": int(raw_tick["instrument_token"]), # Redundant
+            # ...
+        }
+    ```
+
+
+
+
+
+
+
+

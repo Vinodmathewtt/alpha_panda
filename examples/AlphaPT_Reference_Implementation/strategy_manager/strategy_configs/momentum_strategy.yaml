@@ -1,0 +1,57 @@
+# Momentum Strategy Configuration
+# Momentum trading strategy for technology and financial stocks
+
+strategy_name: "momentum_strategy"
+strategy_type: "simple_momentum"
+
+# Routing Configuration - NEW LOGIC
+# Paper trading receives all signals by default when enabled
+# Zerodha trading only receives signals from strategies with zerodha_trade=true
+routing:
+  zerodha_trade: false    # This strategy will NOT send signals to live trading
+  routing_reason: "testing_phase"
+  risk_profile: "paper"
+  # paper_trade removed - all signals go to paper trading by default
+
+# Strategy Parameters
+parameters:
+  lookback_period: 20
+  momentum_threshold: 0.02
+  position_size_pct: 0.1
+  rsi_period: 14
+  volume_period: 20
+  base_quantity: 50
+  rsi_oversold: 30
+  rsi_overbought: 70
+  volume_multiplier: 1.5
+  min_price_change: 1.0
+  signal_validity_period: 5    # Minutes between signals for same instrument
+
+# Risk Management Settings
+risk_limits:
+  max_daily_loss: 5000
+  max_position_per_stock: 500
+  max_total_exposure: 25000
+  stop_loss_percentage: 0.03
+  take_profit_percentage: 0.06
+
+# Performance Monitoring
+monitoring:
+  track_performance: true
+  log_signals: true
+  alert_on_loss: true
+  daily_reports: false
+
+# Target Instruments
+# Format: instrument_token  # symbol_name
+instruments:
+  - 738561    # RELIANCE
+  - 2714625   # ICICIBANK
+  - 81153     # TCS
+  - 1270529   # HDFC
+  - 492033    # KOTAKBANK
+  - 2815745   # BAJAJFINSV
+  - 4267265   # ASIANPAINT
+  - 177665    # TITAN
+  - 3861249   # MARUTI
+  - 225537    # ULTRACEMCO

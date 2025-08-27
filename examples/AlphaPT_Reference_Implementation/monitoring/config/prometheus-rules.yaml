@@ -1,0 +1,166 @@
+groups:
+- name: alphapt.trading.rules
+  rules:
+  - alert: HighMarketDataLatency
+    expr: alphapt_market_data_latency_seconds > 0.1
+    for: 30s
+    labels:
+      severity: warning
+      component: market_data
+    annotations:
+      summary: "High market data latency detected"
+      description: "Market data latency is {{ $value }}s, which exceeds 100ms threshold"
+
+  - alert: LowMarketDataThroughput
+    expr: rate(alphapt_market_data_ticks_total[1m]) < 500
+    for: 1m
+    labels:
+      severity: critical
+      component: market_data
+    annotations:
+      summary: "Low market data throughput"
+      description: "Market data throughput is {{ $value }} ticks/sec, below 500 threshold"
+
+  - alert: EventQueueBacklog
+    expr: alphapt_event_queue_size > 10000
+    for: 30s
+    labels:
+      severity: warning
+      component: event_system
+    annotations:
+      summary: "Event queue backlog detected"
+      description: "Event queue has {{ $value }} pending messages"
+
+  - alert: DatabaseConnectionPoolExhausted
+    expr: alphapt_database_connections_active / alphapt_database_connections_max > 0.9
+    for: 30s
+    labels:
+      severity: critical
+      component: database
+    annotations:
+      summary: "Database connection pool nearly exhausted"
+      description: "Using {{ $value | humanizePercentage }} of database connections"
+
+  - alert: HighMemoryUsage
+    expr: process_resident_memory_bytes / 1024 / 1024 / 1024 > 1.5
+    for: 2m
+    labels:
+      severity: warning
+      component: system
+    annotations:
+      summary: "High memory usage"
+      description: "Process using {{ $value }}GB of memory"
+
+  - alert: StrategyExecutionFailure
+    expr: increase(alphapt_strategy_execution_errors_total[5m]) > 5
+    for: 1m
+    labels:
+      severity: critical
+      component: strategy
+    annotations:
+      summary: "Strategy execution failures"
+      description: "{{ $value }} strategy execution failures in the last 5 minutes"
+
+  - alert: RiskLimitBreach
+    expr: alphapt_risk_exposure_ratio > 0.8
+    for: 10s
+    labels:
+      severity: critical
+      component: risk_management
+    annotations:
+      summary: "Risk exposure limit breach"
+      description: "Risk exposure at {{ $value | humanizePercentage }} of limit"
+
+  - alert: OrderExecutionLatency
+    expr: alphapt_order_execution_latency_seconds > 2.0
+    for: 30s
+    labels:
+      severity: warning
+      component: trading
+    annotations:
+      summary: "High order execution latency"
+      description: "Order execution taking {{ $value }}s on average"
+
+- name: alphapt.system.rules
+  rules:
+  - alert: ServiceDown
+    expr: up == 0
+    for: 30s
+    labels:
+      severity: critical
+      component: system
+    annotations:
+      summary: "Service is down"
+      description: "{{ $labels.instance }} service is not responding"
+
+  - alert: HighCPUUsage
+    expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+    for: 5m
+    labels:
+      severity: warning
+      component: system
+    annotations:
+      summary: "High CPU usage"
+      description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+
+  - alert: DiskSpaceLow
+    expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 15
+    for: 2m
+    labels:
+      severity: warning
+      component: system
+    annotations:
+      summary: "Low disk space"
+      description: "Disk space is {{ $value }}% available on {{ $labels.instance }}"
+
+  - alert: RedisConnectionFailure
+    expr: alphapt_redis_connection_errors_total > 0
+    for: 30s
+    labels:
+      severity: critical
+      component: redis
+    annotations:
+      summary: "Redis connection failures"
+      description: "{{ $value }} Redis connection errors detected"
+
+  - alert: ClickHouseQueryLatency
+    expr: alphapt_clickhouse_query_duration_seconds > 5.0
+    for: 1m
+    labels:
+      severity: warning
+      component: clickhouse
+    annotations:
+      summary: "High ClickHouse query latency"
+      description: "ClickHouse queries taking {{ $value }}s on average"
+
+- name: alphapt.business.rules
+  rules:
+  - alert: TradingVolumeAnomaly
+    expr: abs(rate(alphapt_trading_volume_total[1h]) - rate(alphapt_trading_volume_total[24h] offset 1d)) / rate(alphapt_trading_volume_total[24h] offset 1d) > 0.5
+    for: 5m
+    labels:
+      severity: warning
+      component: business
+    annotations:
+      summary: "Trading volume anomaly detected"
+      description: "Trading volume deviates significantly from historical pattern"
+
+  - alert: UnusualPnLMovement
+    expr: abs(rate(alphapt_portfolio_pnl_total[15m])) > 10000
+    for: 2m
+    labels:
+      severity: critical
+      component: business
+    annotations:
+      summary: "Unusual P&L movement"
+      description: "P&L changing at {{ $value }}/15min rate"
+
+  - alert: StrategyPerformanceDegradation
+    expr: rate(alphapt_strategy_signals_profitable_total[1h]) / rate(alphapt_strategy_signals_total[1h]) < 0.4
+    for: 30m
+    labels:
+      severity: warning
+      component: strategy
+    annotations:
+      summary: "Strategy performance degradation"
+      description: "Strategy profitability below 40% in the last hour"

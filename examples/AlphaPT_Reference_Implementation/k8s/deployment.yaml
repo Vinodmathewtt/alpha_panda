@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alphapt-app
+  namespace: alphapt-production
+  labels:
+    app: alphapt
+    component: trading-engine
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: alphapt
+      component: trading-engine
+  template:
+    metadata:
+      labels:
+        app: alphapt
+        component: trading-engine
+    spec:
+      containers:
+      - name: alphapt
+        image: ghcr.io/vinod/algo/alphapt:latest
+        ports:
+        - containerPort: 8000
+          name: api
+        - containerPort: 8001
+          name: websocket
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        envFrom:
+        - configMapRef:
+            name: alphapt-config
+        - secretRef:
+            name: alphapt-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health/ready
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+      volumes:
+      - name: logs
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: alphapt-config
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alphapt-api
+  namespace: alphapt-production
+  labels:
+    app: alphapt
+    component: api-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: alphapt
+      component: api-server
+  template:
+    metadata:
+      labels:
+        app: alphapt
+        component: api-server
+    spec:
+      containers:
+      - name: alphapt-api
+        image: ghcr.io/vinod/algo/alphapt:latest
+        command: ["python", "api/api_server.py"]
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 8001
+          name: websocket
+        envFrom:
+        - configMapRef:
+            name: alphapt-config
+        - secretRef:
+            name: alphapt-secrets
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5

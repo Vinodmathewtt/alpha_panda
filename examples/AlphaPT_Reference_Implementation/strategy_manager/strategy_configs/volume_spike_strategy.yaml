@@ -1,0 +1,39 @@
+# Volume Spike Strategy Configuration
+# Volume-based strategy for testing signal generation
+
+strategy_name: "volume_spike_test"
+strategy_type: "volume_spike"
+description: "Volume spike strategy for testing signal generation framework"
+
+# Instrument configuration
+instruments:
+  - 140033    # BHARTIARTL
+  - 1346049   # ADANIPORTS
+  - 2939649   # NTPC
+
+# Strategy parameters - configured for frequent signals
+parameters:
+  volume_spike_multiplier: 2.0   # 2x average volume to trigger
+  volume_window_size: 20         # Rolling window for average
+  min_price_change_pct: 0.002    # 0.2% minimum price movement
+  default_quantity: 3
+  max_position_per_instrument: 15
+  signal_cooldown_seconds: 60    # 1 minute cooldown
+  holding_period_seconds: 300    # 5 minute holding period
+
+# Routing configuration - NEW LOGIC
+routing:
+  zerodha_trade: false    # This strategy will NOT send signals to live trading
+  # paper_trade removed - all signals go to paper trading by default
+
+# Risk limits
+risk_limits:
+  max_position_per_stock: 15
+  max_daily_loss: 800
+  max_total_exposure: 3000
+
+# Monitoring configuration
+monitoring:
+  enable_detailed_logging: true
+  track_performance_metrics: true
+  health_check_interval: 60

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="corporate">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Alpha Panda Dashboard{% endblock %}</title>
+    
+    <!-- Performance optimizations -->
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+    
+    <!-- Critical CSS inline for performance -->
+    <style>
+        /* Critical path CSS */
+        .loading { opacity: 0.7; pointer-events: none; }
+        .error-boundary { border: 2px solid #ef4444; background: #fef2f2; padding: 1rem; }
+    </style>
+    
+    <!-- HTMX with integrity -->
+    <script src="https://unpkg.com/htmx.org@1.9.2" 
+            integrity="sha384-L6OqL9pRWyyFU3+/bjdSri+iIphTN/ckddFhRJpNIXDuYILIEpZnN4TFy4TL8hEP" 
+            crossorigin="anonymous" nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/sse.js" 
+            crossorigin="anonymous" nonce="{{ request.state.csp_nonce }}"></script>
+    
+    <!-- Alpine.js with integrity -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" 
+            crossorigin="anonymous" nonce="{{ request.state.csp_nonce }}"></script>
+    
+    <!-- TailwindCSS + DaisyUI -->
+    <script src="https://cdn.tailwindcss.com" nonce="{{ request.state.csp_nonce }}"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@3.5.0/dist/full.css" rel="stylesheet">
+    
+    <!-- Plotly.js for advanced financial charts -->
+    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.26.0/plotly.min.js" 
+            crossorigin="anonymous" nonce="{{ request.state.csp_nonce }}"></script>
+    
+    <!-- Chart.js for dashboard charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" 
+            crossorigin="anonymous" nonce="{{ request.state.csp_nonce }}"></script>
+    
+    {% block head %}{% endblock %}
+</head>
+<body class="min-h-screen bg-base-200" x-data="dashboardGlobal()">
+    <!-- Navigation -->
+    <div class="navbar bg-base-100 shadow-lg">
+        <div class="navbar-start">
+            <div class="dropdown">
+                <label tabindex="0" class="btn btn-ghost lg:hidden">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16"></path>
+                    </svg>
+                </label>
+                <ul tabindex="0" class="menu menu-compact dropdown-content mt-3 p-2 shadow bg-base-100 rounded-box w-52">
+                    <li><a href="/dashboard/">Overview</a></li>
+                    <li><a href="/dashboard/health">Health</a></li>
+                    <li><a href="/dashboard/pipeline">Pipeline</a></li>
+                    <li><a href="/dashboard/portfolios">Portfolios</a></li>
+                    <li><a href="/dashboard/logs">Logs</a></li>
+                </ul>
+            </div>
+            <a class="btn btn-ghost normal-case text-xl" href="/dashboard/">Alpha Panda</a>
+        </div>
+        
+        <div class="navbar-center hidden lg:flex">
+            <ul class="menu menu-horizontal px-1">
+                <li><a href="/dashboard/">Overview</a></li>
+                <li><a href="/dashboard/health">Health</a></li>
+                <li><a href="/dashboard/pipeline">Pipeline</a></li>
+                <li><a href="/dashboard/portfolios">Portfolios</a></li>
+                <li><a href="/dashboard/logs">Logs</a></li>
+            </ul>
+        </div>
+        
+        <div class="navbar-end">
+            <!-- Connection Status Indicator -->
+            <div class="mr-4">
+                <div class="indicator">
+                    <span class="indicator-item badge" :class="{
+                        'badge-success': connectionStatus === 'connected',
+                        'badge-warning': connectionStatus === 'connecting',
+                        'badge-error': connectionStatus === 'disconnected'
+                    }"></span>
+                    <div class="text-xs text-base-content opacity-70">
+                        <span x-text="connectionStatus"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="dropdown dropdown-end">
+                <label tabindex="0" class="btn btn-ghost btn-circle avatar">
+                    <div class="w-10 rounded-full bg-primary text-primary-content flex items-center justify-center">
+                        {{ user.username[0].upper() if user and user.username else "?" }}
+                    </div>
+                </label>
+                <ul tabindex="0" class="mt-3 p-2 shadow menu menu-compact dropdown-content bg-base-100 rounded-box w-52">
+                    <li><a href="/dashboard/settings">Settings</a></li>
+                    <li><a href="/dashboard/profile">Profile</a></li>
+                    <li><a href="/api/v1/auth/logout">Logout</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer footer-center p-4 bg-base-300 text-base-content mt-auto">
+        <div>
+            <p>Alpha Panda Trading System - Broker: <span class="badge badge-primary">{{ broker or 'Not Set' }}</span></p>
+        </div>
+    </footer>
+
+    <!-- Global dashboard functionality -->
+    <script nonce="{{ request.state.csp_nonce }}">
+    function dashboardGlobal() {
+        return {
+            connectionStatus: 'connecting',
+            lastHeartbeat: null,
+            
+            init() {
+                this.initializeErrorHandling();
+                this.startHeartbeat();
+            },
+            
+            initializeErrorHandling() {
+                // Global HTMX error handling
+                document.body.addEventListener('htmx:responseError', (event) => {
+                    this.handleError(event.detail);
+                });
+                
+                document.body.addEventListener('htmx:timeout', (event) => {
+                    this.handleTimeout(event.detail);
+                });
+                
+                document.body.addEventListener('htmx:beforeRequest', () => {
+                    this.connectionStatus = 'connecting';
+                });
+                
+                document.body.addEventListener('htmx:afterRequest', (event) => {
+                    this.connectionStatus = event.detail.successful ? 'connected' : 'error';
+                });
+            },
+            
+            startHeartbeat() {
+                // Initial heartbeat
+                this.sendHeartbeat();
+                
+                // Regular heartbeat every 30 seconds
+                setInterval(() => {
+                    this.sendHeartbeat();
+                }, 30000);
+            },
+            
+            sendHeartbeat() {
+                fetch('/dashboard/api/heartbeat', {
+                    method: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => {
+                    this.connectionStatus = response.ok ? 'connected' : 'error';
+                    this.lastHeartbeat = new Date();
+                })
+                .catch(() => {
+                    this.connectionStatus = 'disconnected';
+                });
+            },
+            
+            handleError(detail) {
+                console.error('Dashboard Error:', detail);
+                this.showNotification('error', 'Connection error. Please refresh the page.');
+            },
+            
+            handleTimeout(detail) {
+                console.warn('Dashboard Timeout:', detail);
+                this.showNotification('warning', 'Request timed out. Retrying...');
+            },
+            
+            showNotification(type, message) {
+                // Create toast notification
+                const toast = document.createElement('div');
+                toast.className = `alert alert-${type} fixed top-4 right-4 w-auto z-50 shadow-lg`;
+                toast.innerHTML = `
+                    <span>${message}</span>
+                    <button class="btn btn-sm btn-ghost" onclick="this.parentElement.remove()">×</button>
+                `;
+                document.body.appendChild(toast);
+                
+                // Auto-remove after 5 seconds
+                setTimeout(() => {
+                    if (toast.parentElement) {
+                        toast.remove();
+                    }
+                }, 5000);
+            }
+        }
+    }
+    </script>
+    
+    <!-- Performance monitoring -->
+    <script nonce="{{ request.state.csp_nonce }}">
+    // Monitor page performance
+    window.addEventListener('load', function() {
+        if ('performance' in window) {
+            const perfData = performance.getEntriesByType('navigation')[0];
+            if (perfData && perfData.loadEventEnd - perfData.loadEventStart > 3000) {
+                console.warn('Dashboard load time exceeded 3 seconds');
+            }
+        }
+    });
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

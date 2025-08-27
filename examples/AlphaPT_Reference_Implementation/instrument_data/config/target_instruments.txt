@@ -1,0 +1,37 @@
+# AlphaPT Target Trading Instruments
+# Format: instrument_token [optional_comment]
+# Lines starting with # are ignored
+
+# Indices
+256265    # NIFTY 50
+260105    # NIFTY BANK
+
+# Large Cap Stocks
+738561    # RELIANCE
+2714625   # ICICIBANK
+1270529   # HDFCBANK
+4267265   # TCS
+1895425   # ITC
+
+# Banking Stocks
+341249    # AXISBANK
+81153     # KOTAKBANK
+2058499   # INDUSINDBK
+
+# IT Stocks
+3924777   # INFY
+3532289   # WIPRO
+4454913   # TECHM
+
+# Auto Stocks
+4267523   # MARUTI
+884737    # M&M
+348929    # TATAMOTORS
+
+# FMCG Stocks
+356865    # HINDUNILVR
+6386689   # NESTLEIND
+975873    # BRITANNIA
+
+# Add more target instruments as needed
+# Maximum recommended: 100-200 instruments for optimal performance

@@ -1,0 +1,64 @@
+# Main Strategy Registry Configuration
+# This file contains the registry of available strategies and global risk profiles
+
+strategies:
+  momentum_strategy:
+    strategy_file: "momentum_strategy"
+    config_file: "momentum_strategy.yaml"
+    enabled: true
+    description: "Momentum strategy for technology and financial stocks"
+  
+  mean_reversion_strategy:
+    strategy_file: "mean_reversion_strategy"
+    config_file: "mean_reversion_strategy.yaml"
+    enabled: true
+    description: "Mean reversion strategy for large cap stocks"
+  
+  # Testing strategies for framework validation
+  price_threshold_test:
+    strategy_file: "price_threshold_strategy"
+    config_file: "price_threshold_strategy.yaml"
+    enabled: true
+    description: "Price threshold strategy for testing signal generation"
+  
+  volume_spike_test:
+    strategy_file: "volume_spike_strategy"
+    config_file: "volume_spike_strategy.yaml"
+    enabled: true
+    description: "Volume spike strategy for testing framework"
+  
+  random_signal_test:
+    strategy_file: "random_signal_strategy"
+    config_file: "random_signal_strategy.yaml"
+    enabled: false
+    description: "Random signal strategy for comprehensive testing (disabled by default)"
+
+# Global Risk Profiles
+risk_profiles:
+  paper:
+    position_size_multiplier: 10.0
+    exposure_limit_multiplier: 10.0
+    block_signals: false
+    log_violations_only: true
+    description: "Liberal limits for paper trading"
+    
+  conservative:
+    position_size_multiplier: 1.0
+    exposure_limit_multiplier: 1.0
+    block_signals: true
+    log_violations_only: false
+    description: "Conservative limits for live trading"
+    
+  aggressive:
+    position_size_multiplier: 1.5
+    exposure_limit_multiplier: 2.0
+    block_signals: true
+    log_violations_only: false
+    description: "Higher limits for aggressive trading"
+    
+  test:
+    position_size_multiplier: 0.1
+    exposure_limit_multiplier: 0.1
+    block_signals: false
+    log_violations_only: true
+    description: "Minimal limits for testing strategies"
