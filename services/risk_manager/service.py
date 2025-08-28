@@ -57,10 +57,6 @@ class RiskManagerService:
         """Safely get producer with error handling"""
         if not self.orchestrator.producers:
             raise RuntimeError(f"No producers available for {self.__class__.__name__}")
-        
-        if len(self.orchestrator.producers) == 0:
-            raise RuntimeError(f"Producers list is empty for {self.__class__.__name__}")
-        
         return self.orchestrator.producers[0]
         
     async def start(self):

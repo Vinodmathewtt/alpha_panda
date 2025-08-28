@@ -1,5 +1,6 @@
 # Strategy Runner Service - Main orchestrator service
 from typing import Dict, Any, List
+from collections import defaultdict
 from sqlalchemy import select
 from core.streaming.patterns.stream_service_builder import StreamServiceBuilder
 from core.schemas.events import EventType
@@ -35,6 +36,9 @@ class StrategyRunnerService:
         self.strategy_runners: Dict[str, StrategyRunner] = {}
         self.strategy_instruments: Dict[str, List[int]] = {}  # strategy_id -> instrument_tokens
         
+        # NEW: Reverse mapping for efficient tick routing (O(1) vs O(n))
+        self.instrument_to_strategies: Dict[int, List[str]] = defaultdict(list)
+        
         # Build streaming service - CLEANED: Remove wrapper pattern
         self.orchestrator = (StreamServiceBuilder("strategy_runner", config, settings)
             .with_redis(redis_client)
@@ -53,10 +57,6 @@ class StrategyRunnerService:
         """Safely get producer with error handling"""
         if not self.orchestrator.producers:
             raise RuntimeError(f"No producers available for {self.__class__.__name__}")
-        
-        if len(self.orchestrator.producers) == 0:
-            raise RuntimeError(f"Producers list is empty for {self.__class__.__name__}")
-        
         return self.orchestrator.producers[0]
         
     async def start(self):
@@ -100,6 +100,10 @@ class StrategyRunnerService:
                     # Store instrument mapping for filtering
                     self.strategy_instruments[config.id] = config.instruments
                     
+                    # NEW: Populate reverse mapping for efficient lookups
+                    for token in config.instruments:
+                        self.instrument_to_strategies[token].append(config.id)
+                    
                     self.logger.info(
                         "Loaded strategy",
                         strategy_id=config.id,
@@ -127,6 +131,10 @@ class StrategyRunnerService:
                     
                     # Store instrument mapping for filtering
                     self.strategy_instruments[strategy.strategy_id] = strategy.instrument_tokens
+                    
+                    # NEW: Populate reverse mapping for efficient lookups
+                    for token in strategy.instrument_tokens:
+                        self.instrument_to_strategies[token].append(strategy.strategy_id)
                     
                     self.logger.info(
                         "Loaded strategy from YAML",
@@ -161,26 +169,24 @@ class StrategyRunnerService:
         if not instrument_token:
             return
         
-        # Find strategies interested in this instrument
-        interested_strategies = []
-        for strategy_id, runner in self.strategy_runners.items():
-            strategy_instruments = self.strategy_instruments.get(strategy_id, [])
-            if instrument_token in strategy_instruments:
-                interested_strategies.append((strategy_id, runner))
+        # NEW: Efficiently find interested strategies with O(1) lookup
+        interested_strategy_ids = self.instrument_to_strategies.get(instrument_token, [])
+        if not interested_strategy_ids:
+            return  # No strategies interested in this instrument
         
         # Process tick through each interested strategy
-        for strategy_id, runner in interested_strategies:
+        for strategy_id in interested_strategy_ids:
+            runner = self.strategy_runners.get(strategy_id)
+            if not runner:
+                continue
             try:
-                # Get strategy configuration for broker routing
-                strategy_config = await self._get_strategy_config(strategy_id)
-                
                 # FIXED: Call process_market_data without producer_callback, get returned signals
                 signals = await runner.process_market_data(tick_data)
                 
                 if signals:
-                    # Generate signals for each active broker that this strategy should run on
-                    for broker in self.active_brokers:
-                        if self._should_process_strategy_for_broker(strategy_config, broker):
+                    # Generate signals for each configured broker that this strategy should run on
+                    for broker in runner.strategy.brokers:
+                        if broker in self.active_brokers:
                             # Emit each signal to the appropriate broker topic
                             for signal in signals:
                                 await self._emit_signal(signal, broker, strategy_id)
@@ -191,18 +197,6 @@ class StrategyRunnerService:
                                       instrument_token=instrument_token,
                                       error=str(e))
     
-    def _should_process_strategy_for_broker(self, strategy_config: Dict, broker: str) -> bool:
-        """Determine if strategy should generate signals for specific broker."""
-        if broker == "paper":
-            return True  # Always generate paper signals
-        elif broker == "zerodha":
-            return strategy_config.get('zerodha_trading_enabled', False)
-        return False
-    
-    async def _get_strategy_config(self, strategy_id: str) -> Dict:
-        """Get strategy configuration from database or default."""
-        # Simplified - can be enhanced to query database
-        return {"zerodha_trading_enabled": True}  # Default config
     
     async def _emit_signal(self, signal, broker: str, strategy_id: str):
         """Emit trading signal to appropriate broker topic with validation"""

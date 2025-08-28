@@ -3,6 +3,7 @@ import json
 import logging
 from typing import List, AsyncGenerator, Dict, Any, Optional
 from aiokafka import AIOKafkaConsumer
+from aiokafka.structs import TopicPartition
 from core.config.settings import RedpandaSettings
 
 logger = logging.getLogger(__name__)
@@ -76,9 +77,8 @@ class MessageConsumer:
         try:
             if message and '_raw_message' in message:
                 # Commit specific message
-                await self._consumer.commit({
-                    message['_raw_message'].topic_partition: message['_raw_message'].offset + 1
-                })
+                tp = TopicPartition(message['_raw_message'].topic, message['_raw_message'].partition)
+                await self._consumer.commit({tp: message['_raw_message'].offset + 1})
             else:
                 # Commit current position
                 await self._consumer.commit()

@@ -39,8 +39,19 @@ class PaperTrader(Trader):
         if not self._initialized:
             raise RuntimeError("PaperTrader not initialized")
             
+        # Use unified log architecture: prefer signal price, fallback to reasonable default
         if last_price is None:
-            return self._create_failure_payload(signal, "Last price required for paper trading")
+            if signal.price is not None:
+                last_price = float(signal.price)
+                self.logger.info("Using signal price for execution", 
+                               instrument_token=signal.instrument_token, 
+                               price=last_price)
+            else:
+                # Fallback for paper trading: use a reasonable default price
+                last_price = 100.0  # Default price for simulation
+                self.logger.warning("No price available, using default for paper trading", 
+                                  instrument_token=signal.instrument_token, 
+                                  default_price=last_price)
 
         # 1. Simulate Slippage
         # Slippage is the difference between the expected price and the actual fill price.

@@ -21,12 +21,12 @@ class StrategyRunner:
         try:
             # Convert to MarketData model
             market_data = MarketData(
-                instrument_token=market_tick_data["instrument_token"],
-                last_price=Decimal(str(market_tick_data["last_price"])),
+                instrument_token=market_tick_data.get("instrument_token"),
+                last_price=Decimal(str(market_tick_data.get("last_price", 0))),
                 volume=market_tick_data.get("volume_traded"),
-                timestamp=datetime.fromisoformat(market_tick_data["timestamp"]) 
-                    if isinstance(market_tick_data["timestamp"], str) 
-                    else market_tick_data["timestamp"],
+                timestamp=datetime.fromisoformat(market_tick_data.get("timestamp")) 
+                    if isinstance(market_tick_data.get("timestamp"), str) 
+                    else market_tick_data.get("timestamp"),
                 ohlc=market_tick_data.get("ohlc")
             )
             
@@ -38,7 +38,7 @@ class StrategyRunner:
                     "Generated trading signals",
                     count=len(signals),
                     strategy_id=self.strategy.strategy_id,
-                    instrument_token=market_tick_data["instrument_token"]
+                    instrument_token=market_tick_data.get("instrument_token")
                 )
                 
                 # Log individual signal details

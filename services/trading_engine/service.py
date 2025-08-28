@@ -1,12 +1,12 @@
 from typing import Dict, Any
 from core.config.settings import RedpandaSettings, Settings
 from core.streaming.patterns.stream_service_builder import StreamServiceBuilder
-from core.schemas.topics import TopicMap, TopicNames
+from core.schemas.topics import TopicMap
 from core.schemas.events import EventType, TradingSignal
 from core.logging import get_trading_logger_safe, get_performance_logger_safe, get_error_logger_safe
 from core.market_hours.market_hours_checker import MarketHoursChecker
 from datetime import datetime, timezone
-from collections import defaultdict
+# Removed: from collections import defaultdict (no longer needed)
 
 from .traders.trader_factory import TraderFactory
 from .routing.execution_router import ExecutionRouter
@@ -29,10 +29,8 @@ class TradingEngineService:
         self.execution_router = execution_router
         self.market_hours_checker = market_hours_checker
         
-        # State management
-        self.last_prices: Dict[int, float] = {}
-        self.pending_signals: Dict[int, list] = defaultdict(list)
-        self.warmed_up_instruments: set[int] = set()
+        # Simplified state management - no warm-up needed
+        # Removed: last_prices, pending_signals, warmed_up_instruments
         
         # Metrics
         self.processed_count = 0
@@ -61,11 +59,8 @@ class TradingEngineService:
                 group_id=f"{settings.redpanda.group_id_prefix}.trading_engine.signals",  # Unified group
                 handler_func=self._handle_validated_signal  # Now topic-aware
             )
-            .add_consumer_handler(
-                topics=[TopicNames.MARKET_TICKS],  # Market data is shared
-                group_id=f"{settings.redpanda.group_id_prefix}.trading_engine.ticks",
-                handler_func=self._handle_market_tick
-            )
+            # REMOVED: No longer subscribe to market ticks
+            # TradingEngine now focuses solely on signal execution
             .build()
         )
     
@@ -73,10 +68,6 @@ class TradingEngineService:
         """Safely get producer with error handling"""
         if not self.orchestrator.producers:
             raise RuntimeError(f"No producers available for {self.__class__.__name__}")
-        
-        if len(self.orchestrator.producers) == 0:
-            raise RuntimeError(f"Producers list is empty for {self.__class__.__name__}")
-        
         return self.orchestrator.producers[0]
     
     async def start(self) -> None:
@@ -128,17 +119,8 @@ class TradingEngineService:
                                   broker=broker)
             return
         
-        # Check if instrument is warmed up with market data
-        if instrument_token not in self.warmed_up_instruments:
-            # Queue the signal with broker context for later processing
-            self.pending_signals[instrument_token].append((data, broker))
-            self.logger.info("Signal queued - waiting for market data",
-                           strategy_id=strategy_id,
-                           instrument_token=instrument_token,
-                           signal_type=signal_type,
-                           queued_signals=len(self.pending_signals[instrument_token]),
-                           broker=broker)
-            return
+        # SIMPLIFIED: Execute immediately using data from unified log
+        # No queuing, no waiting for market data
         
         self.logger.info("Processing validated signal for execution",
                         strategy_id=strategy_id,
@@ -153,32 +135,15 @@ class TradingEngineService:
         
         self.processed_count += 1
     
-    async def _handle_market_tick(self, message: Dict[str, Any], topic: str) -> None:
-        """Handle market tick - pure business logic."""
-        if message.get('type') != EventType.MARKET_TICK:
-            return
-        
-        data = message.get('data', {})
-        instrument_token = data.get('instrument_token')
-        last_price = data.get('last_price')
-        
-        if instrument_token and last_price:
-            self.last_prices[instrument_token] = last_price
-            
-            # Mark instrument as warmed up and process any pending signals
-            if instrument_token not in self.warmed_up_instruments:
-                self.warmed_up_instruments.add(instrument_token)
-                await self._process_pending_signals(instrument_token)
-                self.logger.info("Instrument warmed up with market data",
-                               instrument_token=instrument_token,
-                               pending_signals=len(self.pending_signals.get(instrument_token, [])),
-                               broker="shared")
+    # REMOVED: No longer handle market ticks
+    # TradingEngine is now decoupled from market data
     
     async def _execute_on_trader(self, signal: TradingSignal, namespace: str) -> None:
         """Execute signal on trader - same business logic as before."""
         try:
             trader = self.trader_factory.get_trader(namespace)
-            last_price = self.last_prices.get(signal.instrument_token)
+            # Use price from signal data (unified log architecture)
+            last_price = float(signal.price) if signal.price else None
             
             result_data = await trader.execute_order(signal, last_price)
             
@@ -227,28 +192,8 @@ class TradingEngineService:
             self.logger.error(f"Failed to get producer for order event emission: {e}")
             raise
     
-    async def _process_pending_signals(self, instrument_token: int):
-        """Process all pending signals for an instrument once market data is available"""
-        pending = self.pending_signals.get(instrument_token, [])
-        if not pending:
-            return
-        
-        self.logger.info("Processing pending signals",
-                        instrument_token=instrument_token,
-                        pending_count=len(pending))
-        
-        # Process pending signals with their original broker context
-        for signal_data, broker in pending:
-            original_signal = signal_data.get('original_signal')
-            if not original_signal:
-                continue
-            
-            signal = TradingSignal(**original_signal)
-            # Execute on the original broker only
-            await self._execute_on_trader(signal, broker)
-        
-        # Clear processed signals
-        del self.pending_signals[instrument_token]
+    # REMOVED: No longer need pending signal processing
+    # All signals execute immediately using available data
     
     def get_status(self) -> Dict[str, Any]:
         """Get service status."""
@@ -258,6 +203,6 @@ class TradingEngineService:
             "orchestrator_status": self.orchestrator.get_status(),
             "processed_count": self.processed_count,
             "error_count": self.error_count,
-            "warmed_up_instruments": len(self.warmed_up_instruments),
-            "pending_signals": sum(len(signals) for signals in self.pending_signals.values())
+            # REMOVED: warm-up and pending signal stats
+            # Simplified architecture with immediate execution
         }

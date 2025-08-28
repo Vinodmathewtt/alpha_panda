@@ -54,7 +54,6 @@ coverage.xml
 *.pot
 
 # Django stuff:
-*.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -131,11 +130,6 @@ dmypy.json
 .pyre/
 
 # Alpha Panda specific
-# Logs directory (ENHANCED)
-logs/
-*.log
-*.log.*
-log_*
 
 # IDE and editor files (ENHANCED)
 .vscode/
