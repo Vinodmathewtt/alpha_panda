@@ -32,6 +32,11 @@ class RiskManagerService:
         self.validation_start_time = None
         self.metrics_collector = PipelineMetricsCollector(redis_client, settings)
         
+        # Race condition monitoring
+        self.concurrent_processing_count = 0
+        self.max_concurrent_processing = 0
+        self.race_condition_alerts = 0
+        
         # --- REFACTORED: Multi-broker topic subscription ---
         # Generate list of raw signal topics for all active brokers
         raw_signal_topics = []
@@ -76,8 +81,8 @@ class RiskManagerService:
     
     async def _handle_message(self, message: Dict[str, Any], topic: str) -> None:
         """Handle incoming messages with broker context from topic."""
-        # Extract broker from topic name (e.g., "paper.signals.raw" -> "paper")
-        broker = topic.split('.')[0] if '.' in topic else 'unknown'
+        # Extract broker from topic name using robust parsing
+        broker = TopicMap.get_broker_from_topic(topic)
         
         # Extract key based on message type
         if message.get('type') == EventType.TRADING_SIGNAL:
@@ -99,6 +104,23 @@ class RiskManagerService:
         signal_data = message.get("data", {})
         signal_id = message.get("id")
         correlation_id = message.get("correlation_id")
+        
+        # Race condition monitoring - track concurrent processing
+        self.concurrent_processing_count += 1
+        if self.concurrent_processing_count > self.max_concurrent_processing:
+            self.max_concurrent_processing = self.concurrent_processing_count
+        
+        # Alert if high concurrency detected (potential race condition)
+        if self.concurrent_processing_count > 3:
+            self.race_condition_alerts += 1
+            self.logger.warning(
+                "High concurrent processing detected - potential race condition risk",
+                concurrent_count=self.concurrent_processing_count,
+                max_concurrent=self.max_concurrent_processing,
+                alert_count=self.race_condition_alerts,
+                signal_id=signal_id,
+                broker=broker
+            )
         
         # Record processing start
         self.validation_start_time = datetime.now(timezone.utc)
@@ -154,6 +176,9 @@ class RiskManagerService:
                                   error=str(e),
                                   broker=broker)
             raise
+        finally:
+            # Always decrement concurrent processing counter
+            self.concurrent_processing_count = max(0, self.concurrent_processing_count - 1)
     
     async def _handle_market_tick(self, message: Dict[str, Any]):
         """Update recent prices from market ticks"""
@@ -192,15 +217,8 @@ class RiskManagerService:
             topic_map = TopicMap(broker)
             validated_topic = topic_map.signals_validated()
             
-            # Get producer safely and emit event
-            producer = await self._get_producer()
-            await producer.send(
-                topic=validated_topic,
-                key=key,
-                data=validated_signal.model_dump(mode='json'),
-                event_type=EventType.VALIDATED_SIGNAL,
-                broker=broker
-            )
+            # Emit using generic helper method
+            await self._emit_signal(key, validated_topic, validated_signal.model_dump(mode='json'), EventType.VALIDATED_SIGNAL, broker)
             
             # Record metrics for pipeline monitoring
             await self.metrics_collector.record_signal_validated(signal_data, passed=True)
@@ -238,15 +256,8 @@ class RiskManagerService:
             topic_map = TopicMap(broker)
             rejected_topic = topic_map.signals_rejected()
             
-            # Get producer safely and emit event
-            producer = await self._get_producer()
-            await producer.send(
-                topic=rejected_topic,
-                key=key,
-                data=rejected_signal.model_dump(mode='json'),
-                event_type=EventType.REJECTED_SIGNAL,
-                broker=broker
-            )
+            # Emit using generic helper method  
+            await self._emit_signal(key, rejected_topic, rejected_signal.model_dump(mode='json'), EventType.REJECTED_SIGNAL, broker)
             
             # Record metrics for pipeline monitoring
             await self.metrics_collector.record_signal_validated(signal_data, passed=False)
@@ -274,3 +285,42 @@ class RiskManagerService:
         
         # Note: Position updates will happen when orders are filled,
         # not when signals are generated
+    
+    async def _emit_signal(self, key: str, topic: str, data: Dict[str, Any], event_type: EventType, broker: str):
+        """A generic method to emit signals - reduces code duplication."""
+        try:
+            producer = await self._get_producer()
+            await producer.send(
+                topic=topic,
+                key=key,
+                data=data,
+                event_type=event_type,
+                broker=broker
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get producer for signal emission: {e}")
+            raise
+    
+    def get_monitoring_metrics(self) -> Dict[str, Any]:
+        """Get comprehensive monitoring metrics for the risk manager"""
+        return {
+            "processing_metrics": {
+                "processed_count": self.processed_count,
+                "error_count": self.error_count,
+                "last_processed_time": self.last_processed_time.isoformat() if self.last_processed_time else None,
+                "current_processing_duration_ms": (
+                    (datetime.now(timezone.utc) - self.validation_start_time).total_seconds() * 1000
+                    if self.validation_start_time else 0
+                )
+            },
+            "race_condition_metrics": {
+                "concurrent_processing_count": self.concurrent_processing_count,
+                "max_concurrent_processing": self.max_concurrent_processing,
+                "race_condition_alerts": self.race_condition_alerts,
+                "risk_level": "HIGH" if self.concurrent_processing_count > 3 else "MEDIUM" if self.concurrent_processing_count > 1 else "LOW"
+            },
+            "service_info": {
+                "active_brokers": self.settings.active_brokers,
+                "service_status": "running" if hasattr(self.orchestrator, '_running') else "unknown"
+            }
+        }

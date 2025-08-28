@@ -279,11 +279,11 @@ class DLQPublisher:
                 }
             }
             
-            # Send to DLQ topic
+            # Send to DLQ topic - CRITICAL FIX: use 'data=' not 'value='
             await self.producer.send(
                 topic=dlq_topic,
                 key=message_key,
-                value=dlq_event
+                data=dlq_event
             )
             
             self._dlq_stats["messages_sent"] += 1

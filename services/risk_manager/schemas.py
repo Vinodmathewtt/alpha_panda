@@ -1,12 +1,12 @@
 # Risk Manager API Schemas
-from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from decimal import Decimal
+from core.schemas.events import AlphaPandaBaseModel
 from .models import RiskLevel, RiskCheckResult, RiskViolation
 
 
-class RiskCheckRequest(BaseModel):
+class RiskCheckRequest(AlphaPandaBaseModel):
     """Request schema for risk checking"""
     strategy_id: str
     instrument_token: int
@@ -15,7 +15,7 @@ class RiskCheckRequest(BaseModel):
     price: Decimal
     
 
-class RiskCheckResponse(BaseModel):
+class RiskCheckResponse(AlphaPandaBaseModel):
     """Response schema for risk checking"""
     approved: bool
     results: List[RiskCheckResult]
@@ -23,7 +23,7 @@ class RiskCheckResponse(BaseModel):
     message: Optional[str] = None
     
 
-class RiskSummaryResponse(BaseModel):
+class RiskSummaryResponse(AlphaPandaBaseModel):
     """Risk summary for API responses"""
     portfolio_risk_level: RiskLevel
     active_violations: int
@@ -32,7 +32,7 @@ class RiskSummaryResponse(BaseModel):
     last_updated: datetime
     
 
-class RiskViolationResponse(BaseModel):
+class RiskViolationResponse(AlphaPandaBaseModel):
     """Risk violation details for API"""
     violations: List[RiskViolation]
     total_count: int

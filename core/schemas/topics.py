@@ -149,6 +149,43 @@ class TopicMap:
         
     def dlq(self, base_topic: str) -> str:
         return f"{base_topic}.dlq"
+    
+    @staticmethod
+    def get_broker_from_topic(topic: str) -> str:
+        """
+        Extract broker from topic name using robust parsing logic.
+        
+        Args:
+            topic: Topic name (e.g., "paper.signals.raw", "market.ticks")
+            
+        Returns:
+            Broker name or 'unknown' for shared topics
+            
+        Examples:
+            "paper.signals.raw" -> "paper"
+            "zerodha.orders.filled" -> "zerodha"  
+            "market.ticks" -> "unknown" (shared topic)
+        """
+        if not topic or '.' not in topic:
+            return 'unknown'
+        
+        # Extract first part as potential broker
+        parts = topic.split('.')
+        first_part = parts[0]
+        
+        # Check if it's a known broker prefix
+        known_brokers = ['paper', 'zerodha']
+        if first_part in known_brokers:
+            return first_part
+        
+        # Check for shared topics (market.*, global.*)
+        shared_prefixes = ['market', 'global']
+        if first_part in shared_prefixes:
+            return 'unknown'
+        
+        # For unknown patterns, return 'unknown' to be safe
+        # Could log a warning here in production for monitoring new patterns
+        return 'unknown'
 
 
 class PartitioningKeys:

@@ -40,9 +40,18 @@ class MessageProducer:
         if not self._running or not self._producer:
             return
         
-        await self._producer.flush()
-        await self._producer.stop()
-        self._running = False
+        try:
+            # Ensure all messages are sent before closing
+            await self._producer.flush()
+            await self._producer.stop()
+        except Exception as e:
+            # Log but don't raise to prevent shutdown issues
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error during producer shutdown: {e}")
+        finally:
+            self._producer = None
+            self._running = False
     
     async def send(self, topic: str, key: str, data: Dict[str, Any], 
                    event_type: Optional[EventType] = None,
@@ -59,10 +68,18 @@ class MessageProducer:
             # Use provided event_type or attempt to determine from data
             if event_type:
                 envelope_type = event_type
-            elif 'type' in data and isinstance(data['type'], EventType):
+            elif 'type' in data:
                 envelope_type = data['type']
             else:
-                envelope_type = EventType.MARKET_TICK  # Safe default
+                # More explicit default with logging for debugging
+                envelope_type = EventType.MARKET_TICK
+                # Log when using default for debugging/monitoring
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    f"Using default event type {envelope_type.value} for message without explicit type - "
+                    f"service: {self.service_name}, topic: {topic}, key: {key}"
+                )
             
             envelope = EventEnvelope(
                 id=event_id,
@@ -78,11 +95,37 @@ class MessageProducer:
             envelope = data
             event_id = data.get('id')
         
-        await self._producer.send_and_wait(
-            topic=topic,
-            key=key.encode('utf-8'),
-            value=envelope
-        )
+        # CRITICAL FIX: Ensure robust key and value handling
+        try:
+            # Ensure key is a string and can be encoded
+            if not isinstance(key, str):
+                key = str(key)
+            
+            # Safely encode key to bytes
+            encoded_key = key.encode('utf-8')
+            
+            # Ensure envelope is JSON-serializable dict/object
+            if not isinstance(envelope, (dict, list)):
+                raise ValueError(f"Envelope must be dict or list, got {type(envelope)}")
+            
+            await self._producer.send_and_wait(
+                topic=topic,
+                key=encoded_key,
+                value=envelope  # The value_serializer will handle JSON serialization
+            )
+            
+        except Exception as send_error:
+            # Add detailed error context for debugging
+            error_context = {
+                "topic": topic,
+                "key": key,
+                "key_type": type(key).__name__,
+                "envelope_type": type(envelope).__name__,
+                "service": self.service_name
+            }
+            
+            # Re-raise with context
+            raise RuntimeError(f"MessageProducer.send failed: {send_error}. Context: {error_context}") from send_error
         
         return event_id
     
@@ -91,4 +134,8 @@ class MessageProducer:
         """Custom JSON serializer."""
         if isinstance(obj, datetime):
             return obj.isoformat()
+        # Handle Decimal objects from price fields
+        from decimal import Decimal
+        if isinstance(obj, Decimal):
+            return float(obj)
         raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
