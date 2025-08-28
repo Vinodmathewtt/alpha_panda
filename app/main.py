@@ -9,6 +9,7 @@ from core.logging import configure_logging, get_logger
 from app.containers import AppContainer
 from core.health import SystemHealthMonitor
 from core.config.validator import validate_startup_configuration
+from core.streaming.lifecycle_manager import shutdown_all_streaming_components
 
 class ApplicationOrchestrator:
     """Main application orchestrator with pre-flight health checks."""
@@ -179,6 +180,9 @@ class ApplicationOrchestrator:
             self.logger.error(f"Error during service shutdown: {e}")
         finally:
             try:
+                # Shutdown streaming components first to prevent unclosed producer warnings
+                await shutdown_all_streaming_components(timeout=5.0)
+                
                 db_manager = self.container.db_manager()
                 await db_manager.shutdown()
                 self.logger.info("✅ Alpha Panda application shutdown complete.")

@@ -1,8 +1,8 @@
 # Complete settings with ALL required sections
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, validator, root_validator, field_validator
 from enum import Enum
-from typing import Literal, List, Any
+from typing import Literal, List, Any, Union
 from pathlib import Path
 
 
@@ -169,29 +169,32 @@ class Settings(BaseSettings):
         env_file=".env",
         env_nested_delimiter="__",
         case_sensitive=False,
-        extra="ignore",
-        # Support ACTIVE_BROKERS=paper,zerodha environment variable
-        json_encoders={
-            list: lambda v: ','.join(v) if isinstance(v, list) else v
-        }
+        extra="ignore"
     )
 
     # Multi-broker support configuration
-    active_brokers: List[str] = Field(
-        default=["paper", "zerodha"],
+    active_brokers: Union[str, List[str]] = Field(
+        default="paper,zerodha",
         description="List of active broker namespaces for this deployment instance"
     )
     
-    @validator('active_brokers', pre=True)
+    @field_validator('active_brokers', mode='before')
+    @classmethod
     def parse_active_brokers(cls, v):
         """Parse comma-separated string or return list as-is"""
         if isinstance(v, str):
-            return [broker.strip() for broker in v.split(',') if broker.strip()]
+            brokers = [broker.strip() for broker in v.split(',') if broker.strip()]
+            return brokers
         return v
     
-    @validator('active_brokers')
+    @field_validator('active_brokers')
+    @classmethod
     def validate_active_brokers(cls, v):
         """Validate that all brokers are supported"""
+        # Ensure v is a list at this point
+        if isinstance(v, str):
+            v = [broker.strip() for broker in v.split(',') if broker.strip()]
+            
         supported_brokers = {"paper", "zerodha"}
         invalid_brokers = set(v) - supported_brokers
         if invalid_brokers:

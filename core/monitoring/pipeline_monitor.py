@@ -99,6 +99,11 @@ class PipelineMonitor:
                                        validation_id=validation_results.get("validation_id"),
                                        overall_health=broker_health,
                                        broker=broker)
+                    elif broker_health == "startup":
+                        self.logger.debug("Pipeline validation in startup grace period",
+                                        validation_id=validation_results.get("validation_id"),
+                                        overall_health=broker_health,
+                                        broker=broker)
                     elif broker_health == "warning":
                         self.logger.warning("Pipeline validation shows warnings",
                                           validation_id=validation_results.get("validation_id"),

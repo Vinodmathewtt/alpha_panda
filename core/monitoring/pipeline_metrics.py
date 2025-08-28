@@ -25,10 +25,11 @@ class PipelineStageMetrics:
 class PipelineMetricsCollector:
     """Collects and tracks pipeline flow metrics across all services."""
     
-    def __init__(self, redis_client, settings):
+    def __init__(self, redis_client, settings, broker_namespace=None):
         self.redis = redis_client
         self.settings = settings
-        self.broker_namespace = settings.broker_namespace
+        # Use provided broker_namespace or default to "shared" for market feed
+        self.broker_namespace = broker_namespace or "shared"
         self.logger = get_monitoring_logger_safe("pipeline_metrics")
         
         # TTL for metrics keys (5 minutes)

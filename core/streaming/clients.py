@@ -183,11 +183,11 @@ class StreamProcessor(GracefulShutdownMixin):
         self.consumer = RedpandaConsumer(config, consume_topics, group_id)
         self._running = False
         
-        # Store broker namespace for proper event envelope handling
-        if settings:
-            self.broker_namespace = getattr(settings, 'broker_namespace', 'unknown')
-        else:
-            self.broker_namespace = 'unknown'
+        # Store settings for multi-broker architecture
+        self.settings = settings
+        self.active_brokers = getattr(settings, 'active_brokers', ['paper']) if settings else ['paper']
+        # Default broker namespace for metrics (can be overridden per operation)
+        self.default_broker_namespace = self.active_brokers[0] if self.active_brokers else 'paper'
         
         # Phase 2: Add deduplication and error handling
         if redis_client:
@@ -509,28 +509,32 @@ class StreamProcessor(GracefulShutdownMixin):
             await self._redis_client.incr(tick_count_key)
             await self._redis_client.expire(tick_count_key, 60)
             
-        # For broker-specific topics
+        # For broker-specific topics, extract broker from topic name
         elif "signals" in topic:
-            broker_key = f"alpha_panda:metrics:{self.broker_namespace}:signals:last_generated"
+            # Extract broker from topic (e.g., "paper.signals.raw" -> "paper")
+            broker = topic.split('.')[0] if '.' in topic else self.default_broker_namespace
+            broker_key = f"alpha_panda:metrics:{broker}:signals:last_generated"
             await self._redis_client.setex(broker_key, 600, current_time)
             
             # Signal count for last 5 minutes
-            signal_count_key = f"alpha_panda:metrics:{self.broker_namespace}:signals:count_last_5min"
+            signal_count_key = f"alpha_panda:metrics:{broker}:signals:count_last_5min"
             await self._redis_client.incr(signal_count_key)
             await self._redis_client.expire(signal_count_key, 300)
             
         elif "orders" in topic:
-            order_key = f"alpha_panda:metrics:{self.broker_namespace}:orders:last_processed"
+            # Extract broker from topic (e.g., "zerodha.orders.filled" -> "zerodha")
+            broker = topic.split('.')[0] if '.' in topic else self.default_broker_namespace
+            order_key = f"alpha_panda:metrics:{broker}:orders:last_processed"
             await self._redis_client.setex(order_key, 3600, current_time)
             
             # Order counts for last hour
             if success:
                 if "filled" in topic:
-                    filled_key = f"alpha_panda:metrics:{self.broker_namespace}:orders:filled_last_hour"
+                    filled_key = f"alpha_panda:metrics:{broker}:orders:filled_last_hour"
                     await self._redis_client.incr(filled_key)
                     await self._redis_client.expire(filled_key, 3600)
             else:
-                failed_key = f"alpha_panda:metrics:{self.broker_namespace}:orders:failed_last_hour"
+                failed_key = f"alpha_panda:metrics:{broker}:orders:failed_last_hour"
                 await self._redis_client.incr(failed_key)
                 await self._redis_client.expire(failed_key, 3600)
     
@@ -564,8 +568,8 @@ class StreamProcessor(GracefulShutdownMixin):
         
         if not broker:
             if topic == TopicNames.MARKET_TICKS:
-                # For shared topics, get broker from service settings
-                broker = getattr(self, 'broker_namespace', 'shared')
+                # For shared topics, use "market" namespace for market data
+                broker = 'market'
             else:
                 # For broker-specific topics, extract from topic name
                 broker = topic.split('.')[0] if '.' in topic else "unknown"
@@ -625,7 +629,8 @@ class StreamProcessor(GracefulShutdownMixin):
         
         stats = {
             "service_name": self.name,
-            "broker_namespace": self.broker_namespace,
+            "active_brokers": self.active_brokers,
+            "default_broker_namespace": self.default_broker_namespace,
             "is_running": self._running,
             "uptime_seconds": uptime_seconds,
             

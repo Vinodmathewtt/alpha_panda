@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 import logging
 
 import structlog
@@ -81,7 +82,7 @@ class InstrumentRegistryService:
             session = await session_context.__aenter__()
             try:
                 # Simple query to verify database connectivity
-                result = await session.execute("SELECT 1")
+                result = await session.execute(text("SELECT 1"))
                 result.fetchone()
             finally:
                 await session_context.__aexit__(None, None, None)

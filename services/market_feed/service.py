@@ -49,7 +49,8 @@ class MarketFeedService:
         # Pipeline monitoring metrics
         self.ticks_processed = 0
         self.last_tick_time = None
-        self.metrics_collector = PipelineMetricsCollector(redis_client, settings)
+        # Market feed uses shared namespace since it serves all brokers
+        self.metrics_collector = PipelineMetricsCollector(redis_client, settings, "market")
         
         # Instrument subscription list
         self.instrument_tokens = []

@@ -3,7 +3,7 @@
 services:
   # Redpanda - Unified Log for event streaming  
   redpanda:
-    image: redpandadata/redpanda:v24.2.4
+    image: redpandadata/redpanda:latest
     container_name: alpha-panda-redpanda
     ports:
       - "9092:9092"      # Kafka API
@@ -64,7 +64,7 @@ services:
 
   # Redpanda Console - Web UI for development
   console:
-    image: redpandadata/console:v2.7.2
+    image: redpandadata/console:latest
     container_name: alpha-panda-console
     ports:
       - "8080:8080"

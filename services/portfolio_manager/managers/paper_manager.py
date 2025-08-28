@@ -20,7 +20,7 @@ class PaperPortfolioManager(BasePortfolioManager):
         self._portfolio_locks: Dict[str, asyncio.Lock] = {}
         self._portfolio_locks_lock = asyncio.Lock()
     
-    async def start(self) -> None:
+    async def initialize(self) -> None:
         """Initialize paper portfolio manager."""
         self.logger.info("Starting Paper Portfolio Manager")
         await self.cache.initialize(namespace="paper")
@@ -30,7 +30,11 @@ class PaperPortfolioManager(BasePortfolioManager):
         
         self.logger.info("Paper Portfolio Manager started")
     
-    async def stop(self) -> None:
+    async def start(self) -> None:
+        """Start paper portfolio manager (alias for initialize)."""
+        await self.initialize()
+    
+    async def shutdown(self) -> None:
         """Shutdown paper portfolio manager."""
         self.logger.info("Stopping Paper Portfolio Manager")
         
@@ -40,6 +44,10 @@ class PaperPortfolioManager(BasePortfolioManager):
         
         await self.cache.close()
         self.logger.info("Paper Portfolio Manager stopped")
+    
+    async def stop(self) -> None:
+        """Stop paper portfolio manager (alias for shutdown)."""
+        await self.shutdown()
     
     async def handle_fill(self, fill_data: Dict[str, Any]) -> None:
         """Process fill event for paper portfolio."""

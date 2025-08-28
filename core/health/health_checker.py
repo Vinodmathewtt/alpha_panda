@@ -762,12 +762,13 @@ class ServiceHealthChecker:
             }
         
         try:
-            # Check for recent signal generation activity
-            signals_key = f"alpha_panda:metrics:{self.settings.broker_namespace}:signals:last_generated"
+            # Check for recent signal generation activity - use first active broker
+            broker = self.settings.active_brokers[0] if self.settings.active_brokers else 'paper'
+            signals_key = f"alpha_panda:metrics:{broker}:signals:last_generated"
             last_signal = await self.redis_client.get(signals_key)
             
             # Get signal count in the last 5 minutes
-            signal_count_key = f"alpha_panda:metrics:{self.settings.broker_namespace}:signals:count_last_5min"
+            signal_count_key = f"alpha_panda:metrics:{broker}:signals:count_last_5min"
             signal_count = await self.redis_client.get(signal_count_key)
             signal_count = int(signal_count) if signal_count else 0
             
@@ -779,7 +780,7 @@ class ServiceHealthChecker:
                     "details": {
                         "last_signal_time": None,
                         "signals_last_5min": signal_count,
-                        "broker": self.settings.broker_namespace
+                        "broker": broker
                     }
                 }
             
@@ -797,7 +798,7 @@ class ServiceHealthChecker:
                         "last_signal_time": last_signal_time.isoformat(),
                         "age_seconds": time_since_last,
                         "signals_last_5min": signal_count,
-                        "broker": self.settings.broker_namespace
+                        "broker": broker
                     }
                 }
             
@@ -808,7 +809,7 @@ class ServiceHealthChecker:
                     "last_signal_time": last_signal_time.isoformat(),
                     "age_seconds": time_since_last,
                     "signals_last_5min": signal_count,
-                    "broker": self.settings.broker_namespace,
+                    "broker": broker,
                     "generation_rate": "normal" if signal_count > 0 else "low"
                 }
             }
@@ -828,13 +829,14 @@ class ServiceHealthChecker:
             }
         
         try:
-            # Check for recent order activity
-            orders_key = f"alpha_panda:metrics:{self.settings.broker_namespace}:orders:last_processed"
+            # Check for recent order activity - use first active broker
+            broker = self.settings.active_brokers[0] if self.settings.active_brokers else 'paper'
+            orders_key = f"alpha_panda:metrics:{broker}:orders:last_processed"
             last_order = await self.redis_client.get(orders_key)
             
             # Get order counts for different statuses
-            filled_count_key = f"alpha_panda:metrics:{self.settings.broker_namespace}:orders:filled_last_hour"
-            failed_count_key = f"alpha_panda:metrics:{self.settings.broker_namespace}:orders:failed_last_hour"
+            filled_count_key = f"alpha_panda:metrics:{broker}:orders:filled_last_hour"
+            failed_count_key = f"alpha_panda:metrics:{broker}:orders:failed_last_hour"
             
             filled_count = await self.redis_client.get(filled_count_key)
             failed_count = await self.redis_client.get(failed_count_key)
@@ -851,7 +853,7 @@ class ServiceHealthChecker:
                         "last_order_time": None,
                         "orders_last_hour": 0,
                         "success_rate": 0.0,
-                        "broker": self.settings.broker_namespace
+                        "broker": broker
                     }
                 }
             
@@ -886,7 +888,7 @@ class ServiceHealthChecker:
                     "filled_orders": filled_count,
                     "failed_orders": failed_count,
                     "success_rate": success_rate,
-                    "broker": self.settings.broker_namespace
+                    "broker": broker
                 }
             }
             

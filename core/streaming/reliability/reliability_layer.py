@@ -43,12 +43,11 @@ class ReliabilityLayer:
         if correlation_id:
             CorrelationContext.continue_trace(
                 correlation_id, event_id, self.service_name, 
-                f"process_{topic}", extra_context={"broker": broker}
+                f"process_{topic}"
             )
         else:
             correlation_id = CorrelationContext.start_new_trace(
-                self.service_name, f"process_{topic}", 
-                extra_context={"broker": broker}
+                self.service_name, f"process_{topic}"
             )
         
         # 2. Check for duplicates (broker-aware caching)

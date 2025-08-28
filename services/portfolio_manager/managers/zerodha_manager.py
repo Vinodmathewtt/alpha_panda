@@ -54,7 +54,11 @@ class ZerodhaPortfolioManager(BasePortfolioManager):
         
         self.logger.info("Zerodha Portfolio Manager started")
     
-    async def stop(self) -> None:
+    async def initialize(self) -> None:
+        """Initialize Zerodha portfolio manager (alias for start)."""
+        await self.start()
+    
+    async def shutdown(self) -> None:
         """Shutdown Zerodha portfolio manager."""
         self.logger.info("Stopping Zerodha Portfolio Manager")
         
@@ -71,6 +75,10 @@ class ZerodhaPortfolioManager(BasePortfolioManager):
         await self.cache.close()
         
         self.logger.info("Zerodha Portfolio Manager stopped")
+    
+    async def stop(self) -> None:
+        """Stop Zerodha portfolio manager (alias for shutdown)."""
+        await self.shutdown()
     
     async def handle_fill(self, fill_data: Dict[str, Any]) -> None:
         """Process fill event with transactional persistence."""
