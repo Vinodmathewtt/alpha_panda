@@ -7,12 +7,15 @@ from decimal import Decimal
 from enum import Enum
 from typing import Optional, Dict, Any, List
 from uuid import uuid4
-import uuid_utils
+from datetime import datetime
+import time
 
 
 def generate_uuid7():
-    """Generate UUID v7 for time-ordered event IDs using uuid_utils library"""
-    return str(uuid_utils.uuid7())
+    """Generate UUID v7 for time-ordered event IDs (fallback to timestamp-based UUID)"""
+    # Since uuid7 library isn't working, use uuid4 with timestamp prefix for ordering
+    timestamp = int(time.time() * 1000)  # milliseconds since epoch
+    return f"{timestamp:013x}-{str(uuid4())[13:]}"
 
 
 class AlphaPandaBaseModel(BaseModel):

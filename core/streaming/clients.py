@@ -500,14 +500,21 @@ class StreamProcessor(GracefulShutdownMixin):
         
         current_time = datetime.now(timezone.utc).isoformat()
         
-        # For market ticks (shared topic)
+        # For market ticks (shared topic) - FIXED: Use pipeline metrics format consistent with PipelineMetricsCollector
         if topic == "market.ticks":
-            await self._redis_client.setex("alpha_panda:metrics:market_ticks:last_processed", 300, current_time)
+            # Store simplified timestamp for compatibility with health checker
+            market_data = {
+                "timestamp": current_time,
+                "topic": topic,
+                "processed_by": "streaming_client"
+            }
+            import json
+            await self._redis_client.setex("pipeline:market_ticks:market:last", 300, json.dumps(market_data))
             
-            # Increment tick count for last minute (with expiry)
-            tick_count_key = "alpha_panda:metrics:market_ticks:count_last_minute"
+            # Increment tick count (compatible with pipeline metrics)
+            tick_count_key = "pipeline:market_ticks:market:count"
             await self._redis_client.incr(tick_count_key)
-            await self._redis_client.expire(tick_count_key, 60)
+            await self._redis_client.expire(tick_count_key, 3600)  # 1 hour expiry for total count
             
         # For broker-specific topics, extract broker from topic name
         elif "signals" in topic:

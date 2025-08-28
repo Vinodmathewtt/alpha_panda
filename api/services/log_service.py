@@ -11,7 +11,7 @@ class LogService:
     
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.broker = settings.broker_namespace
+        # FIXED: Removed deprecated broker_namespace - LogService is not broker-specific
     
     async def get_logs(
         self,

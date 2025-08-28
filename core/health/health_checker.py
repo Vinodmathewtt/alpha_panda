@@ -699,8 +699,8 @@ class ServiceHealthChecker:
             }
         
         try:
-            # Check for recent market tick activity in Redis metrics
-            market_tick_key = "alpha_panda:metrics:market_ticks:last_processed"
+            # Check for recent market tick activity in Redis metrics - FIXED: Use pipeline metrics format
+            market_tick_key = "pipeline:market_ticks:market:last"
             last_processed = await self.redis_client.get(market_tick_key)
             
             if not last_processed:
@@ -713,8 +713,10 @@ class ServiceHealthChecker:
                     }
                 }
             
-            # Parse last processed timestamp
-            last_tick_time = datetime.fromisoformat(last_processed.decode('utf-8'))
+            # Parse last processed timestamp - FIXED: Handle JSON format from PipelineMetricsCollector
+            import json
+            last_tick_data = json.loads(last_processed.decode('utf-8'))
+            last_tick_time = datetime.fromisoformat(last_tick_data["timestamp"])
             time_since_last = (datetime.now(timezone.utc) - last_tick_time).total_seconds()
             
             # Market data should be received within the last 30 seconds during market hours
@@ -731,8 +733,8 @@ class ServiceHealthChecker:
                     }
                 }
             
-            # Check tick count in the last minute
-            tick_count_key = "alpha_panda:metrics:market_ticks:count_last_minute"
+            # Check tick count in the last minute - FIXED: Use pipeline metrics format
+            tick_count_key = "pipeline:market_ticks:market:count"
             tick_count = await self.redis_client.get(tick_count_key)
             tick_count = int(tick_count) if tick_count else 0
             
@@ -955,3 +957,86 @@ class ServiceHealthChecker:
                     "error": str(e)
                 }
             }
+    
+    async def _store_health_result(self, result: HealthResult) -> None:
+        """Store health check result in Redis for historical analysis."""
+        if not self.redis_client:
+            return
+        
+        try:
+            import json
+            
+            # Store individual check result with TTL of 1 hour
+            result_key = f"health_check:result:{result.component}:{result.name}"
+            result_data = json.dumps(result.to_dict())
+            await self.redis_client.setex(result_key, 3600, result_data)
+            
+            # Store in time-series for historical analysis (24 hour retention)
+            history_key = f"health_check:history:{result.component}:{result.name}"
+            await self.redis_client.lpush(history_key, result_data)
+            await self.redis_client.ltrim(history_key, 0, 144)  # Keep 24 hours at 10-min intervals
+            await self.redis_client.expire(history_key, 86400)  # 24 hour TTL
+            
+            # Store latest status for quick access
+            status_key = f"health_check:status:{result.component}:{result.name}"
+            status_data = {
+                "status": result.status.value,
+                "timestamp": result.timestamp.isoformat() if result.timestamp else datetime.now(timezone.utc).isoformat(),
+                "duration_ms": result.duration_ms
+            }
+            await self.redis_client.setex(status_key, 3600, json.dumps(status_data))
+            
+        except Exception as e:
+            self.logger.warning("Failed to store health check result in Redis",
+                              check_name=result.name,
+                              component=result.component,
+                              error=str(e))
+    
+    async def _store_overall_health(self, health_data: Dict[str, Any]) -> None:
+        """Store overall health status in Redis."""
+        if not self.redis_client:
+            return
+            
+        try:
+            import json
+            
+            # Store current overall health
+            overall_key = "health_check:overall:current"
+            await self.redis_client.setex(overall_key, 3600, json.dumps(health_data))
+            
+            # Store in historical data
+            history_key = "health_check:overall:history"
+            await self.redis_client.lpush(history_key, json.dumps(health_data))
+            await self.redis_client.ltrim(history_key, 0, 144)  # Keep 24 hours
+            await self.redis_client.expire(history_key, 86400)
+            
+        except Exception as e:
+            self.logger.warning("Failed to store overall health in Redis", error=str(e))
+    
+    async def get_health_history(self, component: Optional[str] = None, 
+                                check_name: Optional[str] = None,
+                                limit: int = 50) -> List[Dict[str, Any]]:
+        """Get health check history from Redis."""
+        if not self.redis_client:
+            return []
+            
+        try:
+            import json
+            
+            if component and check_name:
+                # Get specific check history
+                history_key = f"health_check:history:{component}:{check_name}"
+                history_data = await self.redis_client.lrange(history_key, 0, limit - 1)
+                return [json.loads(item) for item in history_data] if history_data else []
+            else:
+                # Get overall health history
+                history_key = "health_check:overall:history"
+                history_data = await self.redis_client.lrange(history_key, 0, limit - 1)
+                return [json.loads(item) for item in history_data] if history_data else []
+                
+        except Exception as e:
+            self.logger.error("Failed to retrieve health history from Redis",
+                            component=component,
+                            check_name=check_name,
+                            error=str(e))
+            return []

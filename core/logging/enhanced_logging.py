@@ -170,7 +170,26 @@ class EnhancedLoggerManager:
     
     def _configure_structlog(self) -> None:
         """Configure structlog with appropriate processors."""
+        
+        def add_correlation_id(logger, name, event_dict):
+            """Add correlation ID to log events if available"""
+            try:
+                from core.logging.correlation import CorrelationIdManager
+                correlation_id = CorrelationIdManager.get_correlation_id()
+                if correlation_id:
+                    event_dict['correlation_id'] = correlation_id
+                    
+                    # Also add correlation context if available
+                    correlation_context = CorrelationIdManager.get_correlation_context()
+                    if correlation_context:
+                        event_dict['correlation_context'] = correlation_context
+            except ImportError:
+                # Correlation module not available, skip
+                pass
+            return event_dict
+        
         processors = [
+            add_correlation_id,  # Add correlation ID processor first
             structlog.stdlib.add_log_level,
             structlog.stdlib.add_logger_name,
             structlog.stdlib.PositionalArgumentsFormatter(),
@@ -285,7 +304,10 @@ def get_enhanced_logger(name: str, component: Optional[str] = None) -> structlog
             cache_logger_on_first_use=True,
         )
         
-        return structlog.get_logger(name)
+        logger = structlog.get_logger(name)
+        if component:
+            logger = logger.bind(component=component)
+        return logger
     
     return _logger_manager.get_logger(name, component)
 
@@ -344,3 +366,60 @@ def get_monitoring_logger(name: str) -> structlog.BoundLogger:
 def get_error_logger(name: str) -> structlog.BoundLogger:
     """Get an error logger."""
     return get_channel_logger(name, LogChannel.ERROR)
+
+
+# Safe logger functions with fallback
+def get_api_logger_safe(name: str) -> structlog.BoundLogger:
+    """Get an API logger with safe fallback."""
+    try:
+        return get_api_logger(name)
+    except Exception:
+        return get_enhanced_logger(name, "api")
+
+
+def get_audit_logger_safe(name: str) -> structlog.BoundLogger:
+    """Get an audit logger with safe fallback."""
+    try:
+        return get_audit_logger(name)
+    except Exception:
+        return get_enhanced_logger(name, "audit")
+
+
+def get_performance_logger_safe(name: str) -> structlog.BoundLogger:
+    """Get a performance logger with safe fallback."""
+    try:
+        return get_performance_logger(name)
+    except Exception:
+        return get_enhanced_logger(name, "performance")
+
+
+def get_error_logger_safe(name: str) -> structlog.BoundLogger:
+    """Get an error logger with safe fallback."""
+    try:
+        return get_error_logger(name)
+    except Exception:
+        return get_enhanced_logger(name, "error")
+
+
+def get_trading_logger_safe(name: str) -> structlog.BoundLogger:
+    """Get a trading logger with safe fallback."""
+    try:
+        return get_trading_logger(name)
+    except Exception:
+        return get_enhanced_logger(name, "trading")
+
+
+def get_monitoring_logger_safe(name: str) -> structlog.BoundLogger:
+    """Get a monitoring logger with safe fallback."""
+    try:
+        return get_monitoring_logger(name)
+    except Exception:
+        return get_enhanced_logger(name, "monitoring")
+
+
+def get_database_logger_safe(name: str) -> structlog.BoundLogger:
+    """Get a database logger with safe fallback."""
+    try:
+        return get_channel_logger(name, LogChannel.DATABASE)
+    except Exception:
+        return get_enhanced_logger(name, "database")

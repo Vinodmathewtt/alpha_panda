@@ -6,6 +6,7 @@ from core.schemas.events import EventType, ValidatedSignal, RejectedSignal, Trad
 from core.schemas.topics import TopicNames, ConsumerGroups, TopicMap
 from core.config.settings import RedpandaSettings, Settings
 from core.logging import get_trading_logger_safe, get_performance_logger_safe, get_error_logger_safe
+from core.logging.service_logger import get_service_logger
 from core.monitoring import PipelineMetricsCollector
 from .rules import RiskRuleEngine
 from .state import RiskStateManager
@@ -18,10 +19,13 @@ class RiskManagerService:
         self.settings = settings
         self.config = config
         
-        # Initialize business logic components
-        self.logger = get_trading_logger_safe("risk_manager")
-        self.perf_logger = get_performance_logger_safe("risk_manager_performance")
-        self.error_logger = get_error_logger_safe("risk_manager_errors")
+        # Initialize business logic components using standardized logger pattern
+        self.loggers = get_service_logger("risk_manager", "core")
+        
+        # Keep backward compatibility aliases
+        self.logger = self.loggers.main
+        self.perf_logger = self.loggers.performance
+        self.error_logger = self.loggers.error
         self.rule_engine = RiskRuleEngine()
         self.state_manager = RiskStateManager(settings, redis_client)
         
@@ -32,10 +36,6 @@ class RiskManagerService:
         self.validation_start_time = None
         self.metrics_collector = PipelineMetricsCollector(redis_client, settings)
         
-        # Race condition monitoring
-        self.concurrent_processing_count = 0
-        self.max_concurrent_processing = 0
-        self.race_condition_alerts = 0
         
         # --- REFACTORED: Multi-broker topic subscription ---
         # Generate list of raw signal topics for all active brokers
@@ -92,6 +92,11 @@ class RiskManagerService:
         elif message.get('type') == EventType.MARKET_TICK:
             await self._handle_market_tick(message)
         else:
+            self.error_logger.warning("Unknown message type received",
+                                     message_type=message.get('type'), 
+                                     broker=broker,
+                                     topic=topic,
+                                     service="risk_manager")
             self.logger.warning("Unknown message type", message_type=message.get('type'), broker=broker)
     
     async def _handle_trading_signal(self, key: str, message: Dict[str, Any], broker: str):
@@ -104,23 +109,6 @@ class RiskManagerService:
         signal_data = message.get("data", {})
         signal_id = message.get("id")
         correlation_id = message.get("correlation_id")
-        
-        # Race condition monitoring - track concurrent processing
-        self.concurrent_processing_count += 1
-        if self.concurrent_processing_count > self.max_concurrent_processing:
-            self.max_concurrent_processing = self.concurrent_processing_count
-        
-        # Alert if high concurrency detected (potential race condition)
-        if self.concurrent_processing_count > 3:
-            self.race_condition_alerts += 1
-            self.logger.warning(
-                "High concurrent processing detected - potential race condition risk",
-                concurrent_count=self.concurrent_processing_count,
-                max_concurrent=self.max_concurrent_processing,
-                alert_count=self.race_condition_alerts,
-                signal_id=signal_id,
-                broker=broker
-            )
         
         # Record processing start
         self.validation_start_time = datetime.now(timezone.utc)
@@ -176,9 +164,6 @@ class RiskManagerService:
                                   error=str(e),
                                   broker=broker)
             raise
-        finally:
-            # Always decrement concurrent processing counter
-            self.concurrent_processing_count = max(0, self.concurrent_processing_count - 1)
     
     async def _handle_market_tick(self, message: Dict[str, Any]):
         """Update recent prices from market ticks"""
@@ -312,12 +297,6 @@ class RiskManagerService:
                     (datetime.now(timezone.utc) - self.validation_start_time).total_seconds() * 1000
                     if self.validation_start_time else 0
                 )
-            },
-            "race_condition_metrics": {
-                "concurrent_processing_count": self.concurrent_processing_count,
-                "max_concurrent_processing": self.max_concurrent_processing,
-                "race_condition_alerts": self.race_condition_alerts,
-                "risk_level": "HIGH" if self.concurrent_processing_count > 3 else "MEDIUM" if self.concurrent_processing_count > 1 else "LOW"
             },
             "service_info": {
                 "active_brokers": self.settings.active_brokers,

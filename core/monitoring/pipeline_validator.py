@@ -116,8 +116,8 @@ class PipelineValidator:
     async def _validate_market_data_flow(self) -> Dict[str, Any]:
         """Validate market data ingestion and distribution (shared across brokers)"""
         try:
-            # Check for recent market ticks
-            last_tick_key = "alpha_panda:metrics:market_data:last_tick_time"
+            # Check for recent market ticks - FIXED: Use pipeline metrics format with shared "market" namespace
+            last_tick_key = "pipeline:market_ticks:market:last"
             last_tick_time_str = await self.redis.get(last_tick_key)
             
             if not last_tick_time_str:
@@ -128,8 +128,10 @@ class PipelineValidator:
                     "recommendation": "Check market feed service and authentication"
                 }
             
-            # Calculate latency
-            last_tick_time = datetime.fromisoformat(last_tick_time_str.decode())
+            # Calculate latency - FIXED: Parse JSON structure from PipelineMetricsCollector
+            import json
+            last_tick_data = json.loads(last_tick_time_str.decode())
+            last_tick_time = datetime.fromisoformat(last_tick_data["timestamp"])
             latency_seconds = (datetime.utcnow() - last_tick_time).total_seconds()
             
             # Check if market data is stale

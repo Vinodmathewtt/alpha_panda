@@ -44,6 +44,13 @@ make run            # Run the complete trading pipeline
 ### Virtual Environment Rule
 **🚨 MANDATORY**: Always activate the virtual environment before running any Python commands.
 
+### Environment Configuration Policy
+**🔧 .env FILE POLICY**: The project uses `.env` and `.env.example` files for environment configuration and these files are intentionally kept in the repository for operational simplicity. This is a deliberate architectural decision for this project:
+- `.env` and `.env.example` files are part of the codebase and should remain
+- These files contain configuration templates and development defaults
+- Production secrets are handled through deployment-specific environment variables
+- **DO NOT** remove or ignore these files unless explicitly requested
+
 ## Key Technologies
 
 - **Event Streaming**: aiokafka with Redpanda (NOT confluent-kafka, NOT NATS JetStream)
@@ -260,6 +267,8 @@ ACTIVE_BROKERS=paper python cli.py run
 
 #### Implementation Verification Checklist
 Before marking any feature complete, verify:
+
+**Basic Integration Requirements:**
 - [ ] All imported functions exist in their modules
 - [ ] All service methods called by routers are implemented  
 - [ ] Event loops are properly captured in threaded operations
@@ -267,6 +276,16 @@ Before marking any feature complete, verify:
 - [ ] Paths are dynamic and environment-agnostic
 - [ ] Type hints match actual function signatures
 - [ ] EventType enums are used instead of string literals
+
+**Enhanced Architecture Compliance (2025 Update):**
+- [ ] Services use StreamServiceBuilder pattern for stream processing setup
+- [ ] Message handlers accept (message, topic) parameters for broker context extraction
+- [ ] Protocol contracts defined for service interfaces where applicable
+- [ ] Composition preferred over inheritance in strategy and service design
+- [ ] Instrument-to-strategy mappings use O(1) lookup patterns for performance
+- [ ] Topic-aware handlers properly extract broker context from topic names
+- [ ] Service protocols implemented for dependency injection contracts
+- [ ] Performance optimization patterns implemented (reverse mappings, efficient lookups)
 
 ### CRITICAL: Trading Engine Segregation (Current Implementation Enhancement)
 **🎯 FUNDAMENTAL PRINCIPLE**: Paper and Zerodha are treated as **DISTINCT BROKERS**, each with complete isolation:
@@ -321,6 +340,174 @@ See implementation example: `examples/trading/trading_engine_routing.py`
 - **If it is major change, update in CLAUDE.md, but all CLAUDE.md updates should be minimal and concise**
 - **Archive documents to `docs/` folder if needed**
 
+## Python Development Policies
+
+**🐍 COMPOSITION-FIRST OOP**: Follow composition-first object-oriented programming principles for maintainable, testable code. See [Python Development Policies](docs/development/PYTHON_DEVELOPMENT_POLICIES.md) for detailed guidelines and examples.
+
+### Core Python Principles
+- **Prefer composition + protocols over inheritance** - Default to no inheritance; use `typing.Protocol` for contracts
+- **Small, explicit objects** - Keep classes focused (≤7 public methods), avoid God objects
+- **Dependency injection** - Pass dependencies via constructor, use protocol-typed parameters
+- **Immutability preferred** - Use `@dataclass(slots=True, frozen=True)` for value objects
+- **Type safety mandatory** - Full type hints on all public APIs, run mypy/pyright in CI
+
+### Architecture Patterns
+- **Domain isolation** - Domain must not import adapters; adapters depend on domain only
+- **Protocol-based contracts** - Use `typing.Protocol` for interfaces, enable duck typing
+- **Factory functions** - Module-level factories for object assembly, avoid global singletons
+- **Error handling** - Custom exceptions flat hierarchy, convert external errors at boundaries
+
+### Development Rules
+- **No inheritance by default** - Only for framework adapters, stable hierarchies, tiny mixins (one level max)
+- **Pure domain logic** - Keep I/O at edges, core domain sync and pure where possible
+- **Explicit over implicit** - No metaclass magic, clear naming (nouns for classes, verbs for methods)
+
+### Trading-Specific Rules
+- **Concurrency boundaries** - Message passing over shared state; lock wrappers only in adapters
+- **Decimal precision** - All monetary values use `Decimal`, never `float`; currency-aware quantization
+- **Event sourcing** - Aggregates as state machines; monotonic versioning; optimistic concurrency
+
+### Architecture Improvement Guidelines (2025 Update)
+
+**🚨 PRIORITY IMPROVEMENTS**: Based on comprehensive codebase review, focus on these areas for enhanced compliance:
+
+#### 1. Strategy Framework Enhancement (HIGH PRIORITY)
+**Current Issue**: `BaseStrategy` uses inheritance pattern where composition would be preferred.
+
+**RECOMMENDED APPROACH**: Replace inheritance-based strategy framework with composition + Protocol pattern:
+
+```python
+# PREFERRED: Protocol-based contracts
+from typing import Protocol, List
+from core.schemas.events import MarketData, TradingSignal
+
+class StrategyProcessor(Protocol):
+    """Protocol defining strategy processing contract"""
+    def process_market_data(self, data: MarketData) -> List[TradingSignal]: ...
+    def get_required_history(self) -> int: ...
+    def supports_instrument(self, token: int) -> bool: ...
+
+class StrategyExecutor:
+    """Composition-based strategy executor"""
+    def __init__(self, 
+                 processor: StrategyProcessor,
+                 config: StrategyConfig,
+                 brokers: List[str],
+                 instruments: List[int]):
+        self._processor = processor  # Composition over inheritance
+        self._config = config
+        self.brokers = brokers
+        self.instrument_tokens = instruments
+        self._history: List[MarketData] = []
+    
+    async def execute(self, market_data: MarketData) -> List[TradingSignal]:
+        """Execute strategy using composed processor"""
+        self._update_history(market_data)
+        return self._processor.process_market_data(market_data)
+
+# Strategy implementations as simple classes implementing Protocol
+class MomentumProcessor:
+    def process_market_data(self, data: MarketData) -> List[TradingSignal]:
+        # Pure strategy logic
+        pass
+```
+
+**MIGRATION STRATEGY**: 
+- Keep existing `BaseStrategy` for backward compatibility
+- Implement new composition-based framework alongside
+- Gradually migrate strategies to new pattern
+- Mark `BaseStrategy` as deprecated once migration complete
+
+#### 2. Service Protocol Definitions (MEDIUM PRIORITY)
+**Current Issue**: Missing Protocol definitions for service contracts.
+
+**ADD PROTOCOLS FOR**:
+
+```python
+# services/protocols.py - NEW FILE TO CREATE
+from typing import Protocol, Dict, Any
+from datetime import datetime
+
+class MarketFeedProtocol(Protocol):
+    """Contract for market data feed services"""
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+    def get_connection_status(self) -> Dict[str, Any]: ...
+    def get_metrics(self) -> Dict[str, int]: ...
+
+class TradingEngineProtocol(Protocol):
+    """Contract for trading engine services"""
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+    async def execute_signal(self, signal: Dict[str, Any], broker: str) -> Dict[str, Any]: ...
+    def get_status(self) -> Dict[str, Any]: ...
+
+class PortfolioManagerProtocol(Protocol):
+    """Contract for portfolio management services"""
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+    async def update_position(self, order_fill: Dict[str, Any]) -> None: ...
+    async def get_portfolio_snapshot(self, broker: str) -> Dict[str, Any]: ...
+
+class RiskManagerProtocol(Protocol):
+    """Contract for risk management services"""
+    async def validate_signal(self, signal: Dict[str, Any]) -> Dict[str, Any]: ...
+    def get_risk_limits(self, strategy_id: str) -> Dict[str, Any]: ...
+```
+
+**IMPLEMENTATION STRATEGY**:
+- Add Protocol imports to existing service classes: `from services.protocols import MarketFeedProtocol`
+- Update service factory methods to accept Protocol types
+- Use Protocols in dependency injection containers
+- Add runtime Protocol compliance validation in tests
+
+#### 3. Enhanced Architectural Patterns Documentation
+
+**MISSING PATTERNS TO DOCUMENT**:
+
+**StreamServiceBuilder Pattern**:
+```python
+# Key architectural component for service composition
+self.orchestrator = (StreamServiceBuilder("service_name", config, settings)
+    .with_redis(redis_client)           # Optional Redis integration
+    .with_error_handling()              # Automatic DLQ and retry logic
+    .with_metrics()                     # Performance monitoring
+    .add_producer()                     # Kafka producer with idempotence
+    .add_consumer_handler(              # Topic-aware consumer
+        topics=topic_list,
+        group_id="alpha-panda.service.group",
+        handler_func=self._handle_message
+    )
+    .build()
+)
+```
+
+**Topic-Aware Handler Pattern**:
+```python
+# CRITICAL: Handlers must accept (message, topic) parameters
+async def _handle_validated_signal(self, message: Dict[str, Any], topic: str) -> None:
+    # Extract broker from topic name for routing decisions
+    broker = topic.split('.')[0]  # "paper.signals.validated" -> "paper"
+    
+    # Route based on extracted broker context
+    trader = self.trader_factory.get_trader(broker)
+    await trader.execute_order(signal)
+```
+
+**Instrument-to-Strategy Mapping Pattern**:
+```python
+# Performance optimization: O(1) lookups instead of O(n)
+class StrategyRunnerService:
+    def __init__(self):
+        # Reverse mapping for efficient tick routing
+        self.instrument_to_strategies: Dict[int, List[str]] = defaultdict(list)
+    
+    async def _handle_market_tick(self, message: Dict[str, Any], topic: str):
+        instrument_token = message['data']['instrument_token']
+        # O(1) lookup instead of iterating all strategies
+        interested_strategies = self.instrument_to_strategies.get(instrument_token, [])
+```
+
 ## Development Guidelines
 
 See [Development Guide](docs/development/DEVELOPMENT_GUIDE.md) for complete development environment setup, commands, and philosophy.
@@ -346,11 +533,20 @@ See [Development Guide](docs/development/DEVELOPMENT_GUIDE.md) for complete deve
 **Example**: If tests fail because `MarketFeedService.__init__()` is missing an `auth_service` parameter, this indicates the service implementation is incomplete - implement the missing parameter rather than removing it from tests.
 
 ### Implementation Pattern References
+
+**Existing Patterns:**
 - **Event Publishing**: `examples/trading/message_publishing.py`
 - **Broker Authentication**: `examples/trading/broker_authentication.py`
 - **Pure Strategy Pattern**: `examples/trading/pure_strategy_pattern.py`
 - **Trading Engine Routing**: `examples/trading/trading_engine_routing.py`
 - **Lifecycle Management**: `examples/streaming/lifecycle_management.py`
+
+**New Architectural Patterns (2025):**
+- **StreamServiceBuilder**: `core/streaming/patterns/stream_service_builder.py` - Service composition pattern
+- **Topic-Aware Handlers**: All `services/*/service.py` files - Handler methods with (message, topic) signatures
+- **Service Protocols**: Implement `services/protocols.py` for contracts (recommended)
+- **Strategy Composition**: Future `strategies/composition/` directory for composition-based strategies
+- **Performance Optimization**: `services/strategy_runner/service.py` - Instrument-to-strategy mapping pattern
 
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.

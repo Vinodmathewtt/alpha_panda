@@ -15,14 +15,18 @@ import base64
 from datetime import datetime, timezone
 from dataclasses import dataclass
 
+from core.schemas.events import EventType
 from core.utils.exceptions import (
     AlphaPandaException, TransientError, PermanentError,
     AuthenticationError, BrokerError, InfrastructureError,
     StreamingError, MessageDeserializationError, ValidationError,
     is_retryable_error, get_retry_delay, create_error_context
 )
+from core.logging.enhanced_logging import get_error_logger_safe
 
 logger = logging.getLogger(__name__)
+# Use dedicated error channel logger
+error_channel_logger = get_error_logger_safe("streaming_errors")
 
 
 class ErrorType(Enum):
@@ -283,20 +287,56 @@ class DLQPublisher:
             await self.producer.send(
                 topic=dlq_topic,
                 key=message_key,
-                data=dlq_event
+                data=dlq_event,
+                event_type=EventType.SYSTEM_ERROR,
+                broker="system"
             )
             
             self._dlq_stats["messages_sent"] += 1
+            
+            # Log to standard logger
             logger.warning(
                 f"Message sent to DLQ: topic={dlq_topic}, reason={failure_reason}, "
                 f"error_type={error_type.value if error_type else 'unknown'}, "
                 f"retry_count={retry_count}"
             )
+            
+            # Log DLQ event to error channel for tracking
+            error_channel_logger.warning(
+                "Message sent to Dead Letter Queue",
+                service=self.service_name,
+                dlq_topic=dlq_topic,
+                original_topic=original_topic,
+                failure_reason=failure_reason,
+                error_type=error_type.value if error_type else 'unknown',
+                error_class=type(error).__name__,
+                error_message=str(error),
+                retry_count=retry_count,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                dlq_stats=self._dlq_stats
+            )
+            
             return True
             
         except Exception as dlq_error:
             self._dlq_stats["errors"] += 1
+            
+            # Log to standard logger
             logger.error(f"Failed to send message to DLQ: {dlq_error}")
+            
+            # Log critical DLQ failure to error channel
+            error_channel_logger.critical(
+                "CRITICAL: Failed to send message to Dead Letter Queue",
+                service=self.service_name,
+                dlq_error=str(dlq_error),
+                original_error=str(error),
+                original_topic=getattr(original_message, 'topic', 'unknown'),
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                dlq_stats=self._dlq_stats,
+                message_key=message_key,
+                exc_info=True
+            )
+            
             # Critical: If we can't send to DLQ, we must not lose the message
             # In production, this might trigger an alert or write to local storage
             return False
@@ -413,7 +453,23 @@ class ErrorHandler:
             "error_type": error_type.value
         })
         
+        # Log to both standard logger and dedicated error channel
         logger.error(f"Processing error in {self.service_name}", extra=error_context)
+        
+        # Log to dedicated error channel with structured format
+        error_channel_logger.error(
+            "Stream processing error",
+            service=self.service_name,
+            error_type=error_type.value,
+            error_class=type(error).__name__,
+            error_message=str(error),
+            message_topic=getattr(message, 'topic', 'unknown'),
+            message_partition=getattr(message, 'partition', -1),
+            message_offset=getattr(message, 'offset', -1),
+            retry_count=retry_count,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            exc_info=True
+        )
         
         # Handle poison messages immediately
         if error_type == ErrorType.POISON:
