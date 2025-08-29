@@ -1,359 +1,412 @@
-# Alpha Panda Testing Framework - Multi-Broker Architecture
+# Alpha Panda Infrastructure Integration Testing Framework
 
-**Status**: ✅ **PRODUCTION READY** | 🎯 **48/48 Unit Tests Passing** | 🚀 **25/30 E2E Tests Passing** | 📊 **All 20 Instruments Configured**
+**Status**: 🔄 **INFRASTRUCTURE INTEGRATION MIGRATION** | 📋 **New Policy Implementation** | 🏗️ **Real Infrastructure Required**
 
-## 🚀 Quick Start (Production Ready)
+## Critical Testing Philosophy Change
+
+**⚠️ BREAKING CHANGE**: Moving from mock-heavy testing to **Infrastructure Integration Testing** to catch runtime type errors, missing method calls, and serialization issues that mocks cannot detect.
+
+**Previous Issues Found in Production**:
+- `TypeError: a bytes-like object is required, not 'str'` (Redis key handling)
+- `AttributeError: 'PipelineMetricsCollector' object has no attribute 'increment_count'`  
+- `AttributeError: type object 'EventType' has no attribute 'SYSTEM_ERROR'`
+
+**New Philosophy**: **Real Infrastructure + Contract Validation + Error Path Testing**
+
+## 🚀 Quick Start (Infrastructure Integration)
 
 ```bash
 # 1. Setup virtual environment and dependencies
 source venv/bin/activate
 pip install -r requirements.txt -c constraints.txt
 
-# 2. ✅ Run Core Unit Tests (48/48 PASSING)
-python -m pytest tests/unit/phase1/ -v
+# 2. 🏗️ Start Real Infrastructure Stack
+make test-infrastructure-start
+# Starts: Redis (port 6380), Kafka (port 19092), PostgreSQL (port 5433)
 
-# 3. ✅ Run End-to-End Tests (25/30 PASSING)  
-python -m pytest tests/e2e/phase3/ -v
+# 3. 🔍 Run Contract Validation Tests (CRITICAL)
+python -m pytest tests/contracts/ -v
+# Verifies all service method calls actually exist
 
-# 4. ✅ Run All Production-Ready Tests
-python -m pytest tests/unit/phase1/ tests/e2e/phase3/ -v
+# 4. 📊 Run Schema Completeness Tests  
+python -m pytest tests/schemas/ -v
+# Validates all EventType/SignalType references exist
 
-# 5. 🔍 Validate All Instruments (NEW)
-python -m pytest tests/unit/phase1/test_instrument_validation.py -v
+# 5. 🏗️ Run Real Infrastructure Integration Tests
+python -m pytest tests/infrastructure/ -v
+# Tests with actual Redis, Kafka, PostgreSQL
 
-# 6. 🔧 Run Integration Tests (Partial - needs infrastructure)
-make test-setup
-python -m pytest tests/integration/phase2/test_market_feed_integration.py -v
-python -m pytest tests/integration/phase2/test_portfolio_manager_integration.py::TestPortfolioManagerIntegration::test_portfolio_manager_initialization -v
-make test-clean
+# 6. 🚨 Run Error Path Integration Tests
+python -m pytest tests/error_paths/ -v
+# Tests DLQ scenarios, connection failures, serialization errors
+
+# 7. 🎯 Run Complete Test Suite
+python -m pytest tests/ -v --tb=short
+
+# 8. 🛑 Cleanup Infrastructure
+make test-infrastructure-stop
 ```
 
 ### 🎯 **Production Validation Commands**
 ```bash
-# Quick production readiness check (90 seconds)
-python -m pytest tests/unit/phase1/ tests/e2e/phase3/ --tb=short -q
+# Quick infrastructure health check (30 seconds)
+python -m pytest tests/contracts/ tests/schemas/ --tb=short -q
 
-# Full instrument validation (includes all 20 securities)
-python -m pytest tests/unit/phase1/test_instrument_validation.py -v -s
+# Critical runtime issue prevention  
+python -m pytest tests/infrastructure/test_redis_type_handling.py -v
+python -m pytest tests/contracts/test_service_interfaces.py -v
 
-# Performance validation 
-python -m pytest tests/e2e/phase3/test_performance_and_resilience.py -v
+# Full error path validation
+python -m pytest tests/error_paths/ -v -s
+
+# Performance with real infrastructure
+python -m pytest tests/infrastructure/test_performance_integration.py -v
 ```
 
-## ✅ Production Readiness Status
+## 🔄 Infrastructure Integration Status
 
-The Alpha Panda testing framework is **PRODUCTION READY** with comprehensive validation of the **Unified Log Architecture** with **Multi-Broker Support** and **Real Market Data Integration**. 
+The Alpha Panda testing framework is being **MIGRATED** from mock-heavy testing to **Infrastructure Integration Testing** to prevent runtime failures like those recently discovered in production.
 
-### 🏆 **Current Test Results**
-- **Phase 1 (Unit Tests)**: ✅ **48/48 PASSING (100%)**
-- **Phase 3 (E2E Tests)**: ✅ **25/30 PASSING (83%)**  
-- **Market Data Coverage**: ✅ **All 20 instruments from instruments.csv**
-- **Performance Validated**: ✅ **>500 ticks/second throughput**
+### 🎯 **New Test Architecture Results**
+- **Contract Validation**: 🔧 **Implementing** - Verify all method calls exist
+- **Schema Completeness**: 🔧 **Implementing** - Validate all enum references
+- **Real Infrastructure**: 🔧 **Implementing** - Redis/Kafka/PostgreSQL integration
+- **Error Path Coverage**: 🔧 **Implementing** - DLQ scenarios, connection failures
 
-### 🎯 **Key Achievements**
-1. **Complete Instrument Coverage** - All 20 securities from `instruments.csv` validated
-2. **Realistic Market Simulation** - Price movements, volume patterns, market scenarios
-3. **Multi-Broker Architecture** - Complete paper/zerodha broker segregation tested
-4. **Event Streaming Core** - All EventEnvelope patterns and routing validated  
-5. **Strategy Framework** - Both momentum and mean reversion strategies production-ready
-6. **Performance & Resilience** - High-frequency processing and error recovery validated
+### 🚨 **Critical Issues Prevented**
+1. **Type Conversion Errors** - Redis bytes vs string handling with real clients
+2. **Missing Method Calls** - Contract validation prevents AttributeError exceptions
+3. **Incomplete Enums** - Schema scanning catches missing EventType values
+4. **Serialization Issues** - Real Kafka message round-trip testing
+5. **Connection Handling** - Actual infrastructure connection failure scenarios
+6. **Performance Degradation** - Load testing with real components, not mocks
 
 ## Testing Philosophy
 
-**🎯 Primary Goal**: Validate that the complete trading system works correctly with real market data and can execute trades safely across multiple brokers with proper isolation.
+**🎯 Primary Goal**: Catch runtime infrastructure integration issues that mocks cannot detect, while maintaining comprehensive coverage of trading system functionality.
 
-**⚠️ Critical Principle**: Mock data is used ONLY for testing infrastructure - all trading logic validation uses realistic market data patterns to prevent discrepancies with live trading.
+**⚠️ Critical Principle**: **Real Infrastructure First** - Use actual Redis, Kafka, PostgreSQL to catch type conversion, serialization, and connection issues. Mocks only for external APIs (Zerodha) that require credentials.
 
-## Phased Testing Architecture
+## New 4-Layer Testing Architecture
 
-### Phase 1: Core Infrastructure Tests (Unit Level)
-- **Event System** - EventEnvelope, topic routing, message serialization
-- **Broker Segregation** - Topic namespace isolation, cache key prefixing
-- **Strategy Framework** - Pure strategy logic without external dependencies
-- **Configuration** - Multi-broker settings, active broker configuration
-- **Error Handling** - DLQ patterns, retry mechanisms, graceful degradation
+### Layer 1: Contract Validation Tests
+**Purpose**: Verify service interfaces match actual implementations
+- **Service Method Validation** - All called methods exist with correct signatures
+- **Interface Compliance** - Protocol implementations match usage patterns  
+- **Parameter Validation** - Method calls match parameter expectations
+- **Return Type Validation** - Return values match type hints
 
-### Phase 2: Service Integration Tests  
-- **Market Feed Service** - Zerodha API integration, tick formatting, event publishing
-- **Strategy Runner** - Strategy execution, signal generation, multi-broker routing
-- **Risk Manager** - Signal validation, risk rules, broker-aware risk checks
-- **Trading Engine** - Order execution, paper/zerodha trader routing
-- **Portfolio Manager** - Position tracking, PnL calculation, broker segregation
+### Layer 2: Real Infrastructure Integration Tests
+**Purpose**: Test with actual Redis, Kafka, PostgreSQL connections
+- **Redis Integration** - Test both decode_responses=True/False modes
+- **Kafka Integration** - Real message serialization/deserialization
+- **PostgreSQL Integration** - Actual database connections and queries
+- **Connection Failure Recovery** - Infrastructure restart scenarios
 
-### Phase 3: End-to-End Pipeline Tests
-- **Complete Trading Flow** - Market data → Strategy → Risk → Execution → Portfolio
-- **Multi-Broker Operation** - Simultaneous paper/zerodha trading with isolation
-- **Market Data Integration** - Real Zerodha feed processing and distribution
-- **System Resilience** - Service restart recovery, infrastructure failover
-- **Performance Validation** - High-frequency processing, latency requirements
+### Layer 3: Schema and Enum Completeness Tests
+**Purpose**: Validate all referenced schemas/enums are complete
+- **EventType Validation** - All EventType.XXX references exist in enum
+- **SignalType Validation** - All SignalType references validated
+- **Schema Completeness** - Event data structures match usage
+- **Version Compatibility** - Schema evolution and backwards compatibility
 
-## 📁 Production Test Structure (Current Implementation)
+### Layer 4: Error Path Integration Tests  
+**Purpose**: Test error scenarios with real infrastructure
+- **DLQ Error Handling** - Dead Letter Queue with actual Kafka topics
+- **Connection Failure** - Redis/Kafka/DB connection loss scenarios
+- **Message Poison** - Malformed message handling with real serialization
+- **Resource Exhaustion** - Memory/connection limit testing
+
+## 📁 New Infrastructure Integration Test Structure
 
 ```
 tests/
-├── unit/
-│   └── phase1/ ✅ (48/48 PASSING)    # Core infrastructure tests
-│       ├── test_basic_event_system.py         # EventEnvelope, broker segregation ✅
-│       ├── test_basic_strategy_framework.py   # Strategy patterns ✅
-│       ├── test_mock_data_generator.py        # Market data simulation ✅
-│       ├── test_instrument_validation.py      # All 20 instruments ✅ NEW
-│       └── test_strategy_instrument_integration.py # Strategy testing 🔧 
-├── integration/
-│   └── phase2/ 🔧 (Partial)         # Service integration tests  
-│       ├── test_market_feed_integration.py    # Market data service (10/12 ✅)
-│       ├── test_portfolio_manager_integration.py # Portfolio service (1/16 ✅)
-│       ├── test_risk_manager_integration.py   # Risk validation 🔧
-│       ├── test_strategy_runner_integration.py # Strategy execution 🔧
-│       └── test_trading_engine_integration.py # Order execution 🔧
-├── e2e/
-│   └── phase3/ ✅ (25/30 PASSING)    # End-to-end pipeline tests
-│       ├── test_complete_trading_pipeline.py  # Complete flow (9/10 ✅)
-│       ├── test_performance_and_resilience.py # Performance (10/10 ✅)
-│       └── test_system_integration.py         # System tests (6/10 ✅)
-├── mocks/ ✅ ENHANCED               # Production-ready mock infrastructure
-│   ├── mock_market_server.py                 # Market data simulation
-│   ├── mock_zerodha_api.py                   # Zerodha API simulation  
-│   └── realistic_data_generator.py           # 20 instruments + scenarios ✅
-└── fixtures/                      # Shared test utilities
-    └── (standard pytest fixtures)
+├── contracts/                      🔧 NEW - Service interface validation
+│   ├── test_service_interfaces.py             # Method existence validation
+│   ├── test_metrics_collector_interface.py   # PipelineMetricsCollector methods
+│   ├── test_state_manager_interface.py       # RiskStateManager methods
+│   └── test_protocol_compliance.py           # Protocol implementation validation
+├── schemas/                       🔧 NEW - Schema and enum completeness  
+│   ├── test_event_type_completeness.py       # EventType enum validation
+│   ├── test_signal_type_completeness.py      # SignalType enum validation
+│   ├── test_schema_usage_validation.py       # Data structure usage
+│   └── test_version_compatibility.py         # Schema evolution testing
+├── infrastructure/                🔧 NEW - Real infrastructure integration
+│   ├── test_redis_integration.py             # Real Redis client testing
+│   ├── test_kafka_integration.py             # Real Kafka message flow
+│   ├── test_postgres_integration.py          # Real database operations
+│   ├── test_serialization_roundtrip.py      # Message serialization with real Kafka
+│   ├── test_connection_management.py         # Connection pooling and lifecycle
+│   └── test_performance_integration.py       # Performance with real infrastructure
+├── error_paths/                   🔧 NEW - Error scenario testing
+│   ├── test_dlq_error_handling.py            # Dead Letter Queue scenarios  
+│   ├── test_connection_failure_recovery.py   # Infrastructure failure scenarios
+│   ├── test_poison_message_handling.py       # Malformed message scenarios
+│   ├── test_resource_exhaustion.py           # Memory/connection limits
+│   └── test_graceful_degradation.py          # Service degradation patterns
+├── legacy/                        📦 MIGRATING - Previous test structure
+│   ├── unit/ (phase1)                        # Migrating to contracts/ + schemas/
+│   ├── integration/ (phase2)                 # Migrating to infrastructure/  
+│   └── e2e/ (phase3)                         # Migrating to error_paths/
+├── fixtures/                      🔧 ENHANCED - Real infrastructure fixtures
+│   ├── infrastructure_stack.py               # Docker container management
+│   ├── real_redis_client.py                  # Redis test client factory
+│   ├── real_kafka_client.py                  # Kafka test client factory
+│   └── database_fixtures.py                  # PostgreSQL test fixtures
+└── utilities/                     🔧 NEW - Testing utilities
+    ├── contract_scanner.py                   # Code scanning for method calls
+    ├── schema_scanner.py                     # Enum usage pattern detection
+    ├── infrastructure_health.py              # Test environment health checks  
+    └── performance_metrics.py                # Real infrastructure performance
 ```
 
-### 🆕 **Recent Enhancements (Production Readiness Update)**
+### 🆕 **Infrastructure Integration Implementation**
 
-#### ✅ **Complete Instrument Coverage Implementation**
-- ✅ **New**: `test_instrument_validation.py` - Comprehensive validation of all 20 instruments
-- ✅ **Enhanced**: `realistic_data_generator.py` - All instruments from `services/market_feed/instruments.csv`
-- ✅ **Updated**: Strategy configurations (momentum & mean reversion) for all instruments
-- ✅ **Validated**: Price ranges, volatility patterns, volume scaling per instrument
+#### 🔧 **Critical Infrastructure Integration Features**
+- 🔧 **New**: `test_service_interfaces.py` - Validates all service method calls exist
+- 🔧 **New**: `test_redis_integration.py` - Tests with actual Redis (bytes vs string modes)  
+- 🔧 **New**: `test_event_type_completeness.py` - Scans codebase for missing enum values
+- 🔧 **New**: `test_dlq_error_handling.py` - Tests Dead Letter Queue with real Kafka
 
-#### 🔧 **Service Integration Fixes** 
-- ✅ **Fixed**: Portfolio manager service constructor and import issues
-- ✅ **Fixed**: Mock data generator symbol consistency (NIFTY50 vs NIFTY 50)
-- ✅ **Enhanced**: Test fixtures with proper async handling
-- ✅ **Improved**: Error handling and graceful degradation patterns
+#### 🚨 **Issues Prevented by New Tests**
+- 🔧 **TypeError Prevention**: Redis key type conversion with real clients
+- 🔧 **AttributeError Prevention**: Method existence validation before runtime
+- 🔧 **Enum Completeness**: Missing EventType values caught during CI/CD
+- 🔧 **Serialization Validation**: Message round-trip testing with actual Kafka
 
-#### 📊 **Instruments Now Fully Supported in Tests**
-| **Index** | **Banking** | **IT** | **Auto** | **Pharma/FMCG** | **Infrastructure** |
-|-----------|-------------|--------|----------|------------------|-------------------|
-| NIFTY50 ✅ | ICICIBANK ✅ | TCS ✅ | MARUTI ✅ | HINDUNILVR ✅ | NTPC ✅ |
-| BANKNIFTY ✅ | BAJFINANCE ✅ | WIPRO ✅ | M&M ✅ | ASIANPAINT ✅ | POWERGRID ✅ |
-| | KOTAKBANK ✅ | | | | ADANIPORTS ✅ |
-| | BAJAJFINSV ✅ | | | | BHARTIARTL ✅ |
+#### 🏗️ **Real Infrastructure Components Required**
+| **Component** | **Test Port** | **Purpose** | **Implementation** |
+|---------------|---------------|-------------|-------------------|
+| Redis ✅ | 6380 | Type conversion, connection pooling | `redis:7-alpine` container |
+| Kafka ✅ | 19092 | Message serialization, DLQ scenarios | `confluentinc/cp-kafka:7.4.0` |
+| PostgreSQL ✅ | 5433 | Database integration, connection failures | `postgres:15-alpine` |
+| Zookeeper ✅ | 2181 | Kafka coordination | `confluentinc/cp-zookeeper:7.4.0` |
 
-**Additional**: RELIANCE ✅, TITAN ✅, ULTRACEMCO ✅, COALINDIA ✅
+**Docker Compose**: All components managed via `docker-compose.test-infrastructure.yml`
 
 ## Implementation Plan
 
-### Phase 1: Core Infrastructure Tests (Week 1)
-**Goal**: Validate foundational architecture components work correctly
+### Phase 1: Contract Validation Tests (Week 1) 🔧 CRITICAL
+**Goal**: Prevent AttributeError exceptions by validating all service method calls exist
 
-1. **Event System Testing** (`test_event_system.py`)
-   - EventEnvelope serialization/deserialization
-   - UUID v7 event ID generation and validation
-   - Correlation ID and causation ID linking
-   - Topic routing by broker namespace
+1. **Service Interface Validation** (`test_service_interfaces.py`)
+   - PipelineMetricsCollector method validation (increment_count, set_last_activity_timestamp)
+   - RiskStateManager method signatures (get_state, update_position)
+   - Strategy service method existence validation
+   - Protocol implementation compliance checking
 
-2. **Broker Segregation Testing** (`test_broker_segregation.py`)
-   - Topic namespace isolation (paper.* vs zerodha.*)
-   - Redis cache key prefixing (paper: vs zerodha:)
-   - Configuration-based broker activation
-   - Topic subscription patterns
+2. **Method Signature Validation** (`test_method_signatures.py`)
+   - Parameter count and type validation
+   - Return type annotation compliance
+   - Async/sync method consistency
+   - Optional parameter handling
 
-3. **Strategy Framework Testing** (`test_strategy_framework.py`)
-   - BaseStrategy inheritance and interface
-   - MarketTick → TradingSignal pure function processing
-   - Strategy configuration and parameter validation
-   - Multi-strategy execution isolation
+3. **Protocol Compliance Testing** (`test_protocol_compliance.py`)
+   - Service protocol implementations
+   - Interface contract validation
+   - Duck typing compatibility
+   - Method resolution order validation
 
-4. **Configuration Testing** (`test_configuration.py`)
-   - ACTIVE_BROKERS environment variable parsing
-   - Multi-broker settings validation
-   - Topic name generation for active brokers
-   - Redis and database connection configuration per broker
+### Phase 2: Schema Completeness Tests (Week 1) 🔧 CRITICAL  
+**Goal**: Prevent missing enum AttributeError exceptions
 
-5. **Error Handling Testing** (`test_error_handling.py`)
-   - DLQ pattern implementation
-   - Exponential backoff with jitter
-   - Poison message detection and routing
-   - Graceful degradation scenarios
+1. **EventType Enum Validation** (`test_event_type_completeness.py`)
+   - Scan codebase for EventType.XXX usage patterns
+   - Validate all referenced enum values exist (including SYSTEM_ERROR)
+   - Check DLQ error handling enum usage
+   - Validate event type routing logic
 
-### Phase 2: Service Integration Tests (Week 2)
-**Goal**: Validate service interactions and event flow integration
+2. **Schema Usage Validation** (`test_schema_usage_validation.py`)
+   - EventEnvelope field usage consistency
+   - SignalType reference validation
+   - Data structure field validation
+   - Schema version compatibility
 
-1. **Market Feed Service Testing** (`test_market_feed.py`)
-   - Zerodha API connection and authentication
-   - Market tick formatting and validation
-   - Event publishing to market.ticks topic
-   - Connection recovery and error handling
+### Phase 3: Real Infrastructure Integration Tests (Week 2) 🔧 CRITICAL
+**Goal**: Test with actual Redis, Kafka, PostgreSQL to catch type conversion and serialization issues
 
-2. **Strategy Runner Service Testing** (`test_strategy_runner.py`)
-   - Strategy loading from database configuration
-   - Market tick processing and signal generation
-   - Multi-broker signal routing (paper.* vs zerodha.* topics)
-   - Strategy execution isolation and error containment
+1. **Redis Integration Testing** (`test_redis_integration.py`)
+   - Test both decode_responses=True/False modes
+   - Redis key type handling (bytes vs string) - **CRITICAL**
+   - Connection pooling and lifecycle management
+   - Cache expiration and TTL behavior
 
-3. **Risk Manager Service Testing** (`test_risk_manager.py`)
-   - Signal validation against risk rules
-   - Position size and exposure limits
-   - Broker-aware risk rule application
-   - Signal approval/rejection flow
+2. **Kafka Integration Testing** (`test_kafka_integration.py`)
+   - Real message serialization/deserialization
+   - Topic creation and partition management
+   - Consumer group behavior validation
+   - Message ordering and partition key handling
 
-4. **Trading Engine Service Testing** (`test_trading_engine.py`)
-   - Topic-aware message handling with broker extraction
-   - PaperTrader vs ZerodhaTrader routing
-   - Order execution and acknowledgment flow
-   - Error handling and retry mechanisms
+3. **Database Integration Testing** (`test_postgres_integration.py`)
+   - Real database connection pooling
+   - Transaction isolation and rollback
+   - Query execution and result handling
+   - Connection failure recovery
 
-5. **Portfolio Manager Service Testing** (`test_portfolio_manager.py`)
-   - Multi-broker position tracking with cache isolation
-   - Real-time PnL calculation
-   - Portfolio state consistency across service restarts
-   - Event-driven portfolio updates
+4. **Serialization Round-trip Testing** (`test_serialization_roundtrip.py`)
+   - EventEnvelope → JSON → Kafka → JSON → EventEnvelope
+   - Data type preservation (Decimal, datetime)
+   - Message corruption detection
+   - Schema evolution compatibility
 
-### Phase 3: End-to-End Pipeline Tests (Week 3)
-**Goal**: Validate complete trading system with realistic market conditions
+### Phase 4: Error Path Integration Tests (Week 3) 🔧 CRITICAL
+**Goal**: Test error scenarios that trigger DLQ and error handling with real infrastructure
 
-1. **Complete Trading Pipeline** (`test_trading_pipeline.py`)
-   - Market data → Strategy → Risk → Execution → Portfolio flow
-   - Message ordering and correlation ID tracking
-   - Event deduplication across the pipeline
-   - System latency and performance validation
+1. **DLQ Error Handling** (`test_dlq_error_handling.py`)
+   - Dead Letter Queue with actual Kafka topics
+   - EventType.SYSTEM_ERROR usage validation - **CRITICAL**
+   - Poison message handling and retry logic
+   - DLQ message replay mechanisms
 
-2. **Multi-Broker Operation** (`test_multi_broker.py`)
-   - Simultaneous paper and zerodha trading
-   - Complete data isolation between brokers
-   - Independent portfolio tracking
-   - Configuration-driven broker activation
+2. **Connection Failure Recovery** (`test_connection_failure_recovery.py`)
+   - Redis connection loss and reconnection
+   - Kafka broker failure scenarios
+   - Database connection exhaustion
+   - Service graceful degradation
 
-3. **System Resilience** (`test_system_resilience.py`)
-   - Service restart and state recovery
-   - Infrastructure failover scenarios
-   - Message replay and gap detection
-   - Graceful degradation under load
+3. **Resource Exhaustion Testing** (`test_resource_exhaustion.py`)
+   - Memory leak detection with real services
+   - Connection pool exhaustion
+   - Message queue overflow scenarios
+   - Performance degradation under load
 
-## Mock Data Infrastructure (Tests Only)
+## Infrastructure Management
 
-### ✅ Production-Ready Mock Data Infrastructure
+### 🏗️ Real Infrastructure Stack (Required)
 
-**Purpose**: Provide comprehensive, realistic market data patterns for testing without live market dependencies
+**Purpose**: Provide actual Redis, Kafka, PostgreSQL components to catch runtime integration issues that mocks cannot detect
 
-1. **Enhanced Realistic Data Generation** (`realistic_data_generator.py`) ✅
-   - **All 20 instruments** from `services/market_feed/instruments.csv`
-   - Geometric Brownian motion price movements
-   - Volume scaling based on instrument characteristics  
-   - Market scenarios: volatile, trending, low volume
-   - Configurable market hours and trading sessions
-   - **Instruments**: NIFTY50, BANKNIFTY, RELIANCE, BAJFINANCE, TCS, ICICIBANK, KOTAKBANK, BAJAJFINSV, ASIANPAINT, TITAN, MARUTI, ULTRACEMCO, ADANIPORTS, NTPC, BHARTIARTL, POWERGRID, M&M, WIPRO, COALINDIA, HINDUNILVR
+1. **Docker Infrastructure Stack** (`docker-compose.test-infrastructure.yml`) 🔧
+   - **Redis 7-Alpine**: Port 6380, both decode modes for type conversion testing
+   - **Kafka + Zookeeper**: Ports 19092/2181, real message serialization testing
+   - **PostgreSQL 15**: Port 5433, actual database connection and transaction testing
+   - **Health Checks**: Automated startup verification and readiness probes
 
-2. **Mock Zerodha API** (`mock_zerodha_api.py`) ✅
-   - WebSocket tick stream simulation for all instruments
-   - Order placement and status responses
-   - Portfolio and position data
-   - Authentication flow simulation
-   - Multi-instrument support
+2. **Infrastructure Test Fixtures** (`fixtures/infrastructure_stack.py`) 🔧
+   - Container lifecycle management (start/stop/cleanup)
+   - Connection factory patterns for test clients
+   - Infrastructure health monitoring during tests
+   - Parallel test execution with isolated environments
 
-3. **Mock Market Server** (`mock_market_server.py`) ✅
-   - HTTP/WebSocket server for market data distribution
-   - Configurable latency and throughput
-   - Error injection for resilience testing
-   - Market event simulation (circuit breakers, halts)
+3. **Connection Management Testing** (`test_connection_management.py`) 🔧
+   - Connection pooling behavior validation
+   - Resource cleanup and leak detection
+   - Connection failure and recovery scenarios
+   - Performance monitoring under load
 
-### 📊 **Mock Data Validation Results**
-- ✅ All 20 instruments generate realistic ticks
-- ✅ Price movements follow geometric Brownian motion
-- ✅ Volume patterns scale appropriately per instrument
-- ✅ Market scenarios (volatile/trending) working
-- ✅ Performance: >500 ticks/second generation capability
+### 📊 **Infrastructure Integration Requirements**
+- 🔧 Docker and Docker Compose installed
+- 🔧 Ports 6380, 19092, 5433, 2181 available
+- 🔧 Minimum 2GB RAM for test containers
+- 🔧 Network connectivity for container communication
+- 🔧 Test isolation and parallel execution support
 
-**⚠️ Critical Note**: Mock data servers exist ONLY in the tests module and are never part of the main application. All trading logic uses market-realistic patterns validated against production requirements.
+**⚠️ Critical Note**: Real infrastructure components are ONLY used for testing and completely isolated from production systems. All test environments use separate ports and isolated Docker networks.
 
 ## Performance Targets & Monitoring
 
-### ✅ Validated Performance Metrics
-- **Market Data Throughput**: ✅ **>500 ticks/second** sustained processing validated
-- **Strategy Processing**: ✅ **>100 ticks/second** per strategy validated  
-- **Mock Data Generation**: ✅ **>500 ticks/second** generation capability
-- **Memory Efficiency**: ✅ Bounded history management (≤200 items per strategy)
-- **Multi-Instrument Support**: ✅ **All 20 instruments** processing simultaneously
-- **Price Movement Accuracy**: ✅ Tick-size aligned, realistic volatility patterns
+### 🔧 Infrastructure Integration Performance Metrics
+- **Redis Integration**: <5ms average response time with real client
+- **Kafka Integration**: <10ms average message round-trip time
+- **Database Integration**: <20ms average query execution time
+- **Memory Usage**: <200MB total for all test infrastructure containers
+- **Error Recovery**: <5 seconds reconnection time after infrastructure restart
+- **Test Execution**: Complete test suite <300 seconds including infrastructure startup
 
-### 🎯 Production Targets (Validated in Tests)
-- **End-to-End Latency**: <20ms average, <50ms P95 (market tick → order placed)
-- **Memory Usage**: <100MB per service under normal load  
-- **Error Recovery**: System operational within 30 seconds of infrastructure restart
-- **Multi-Strategy Processing**: Handle 10+ strategies simultaneously without degradation
+### 🎯 Critical Performance Validation (Real Infrastructure)
+- **Type Conversion Overhead**: Redis bytes vs string mode performance comparison
+- **Serialization Performance**: EventEnvelope → JSON → Kafka message overhead
+- **Connection Pool Efficiency**: Resource utilization under concurrent test execution
+- **Error Path Performance**: DLQ processing latency with actual Kafka topics
 
-### 📊 Test Monitoring Coverage
-- ✅ Event processing performance per service
-- ✅ Strategy execution timing and throughput
-- ✅ Mock data generation performance
-- ✅ Memory usage patterns (bounded histories)
-- ✅ Multi-instrument concurrent processing
-- ✅ Error handling and graceful degradation
+### 📊 Infrastructure Integration Monitoring
+- 🔧 Container resource usage (CPU, memory, network)
+- 🔧 Connection establishment and cleanup times
+- 🔧 Message serialization/deserialization throughput
+- 🔧 Error scenario recovery times
+- 🔧 Test execution parallelization efficiency
 
 ## Development Commands
 
-### Phase 1 Development
+### Infrastructure Integration Development
 ```bash
-# Create Phase 1 test structure
-mkdir -p tests/unit/phase1
-mkdir -p tests/mocks
-mkdir -p tests/fixtures
+# Create new test structure
+mkdir -p tests/{contracts,schemas,infrastructure,error_paths}
+mkdir -p tests/fixtures tests/utilities
 
-# Run Phase 1 tests
-source venv/bin/activate
-python -m pytest tests/unit/phase1/ -v --tb=short
+# Start infrastructure stack
+make test-infrastructure-start
 
-# Run with coverage
-python -m pytest tests/unit/phase1/ --cov=core --cov=strategies --cov-report=term-missing
+# Run contract validation tests
+python -m pytest tests/contracts/ -v --tb=short
+
+# Run schema completeness tests  
+python -m pytest tests/schemas/ -v --tb=short
+
+# Run infrastructure integration tests
+python -m pytest tests/infrastructure/ -v --tb=short
+
+# Run error path tests
+python -m pytest tests/error_paths/ -v --tb=short
+
+# Stop infrastructure stack
+make test-infrastructure-stop
 ```
 
 ### Infrastructure Management
 ```bash
-# Start test infrastructure
-make test-setup
+# Start real infrastructure stack
+docker compose -f docker-compose.test-infrastructure.yml up -d
 
 # Check infrastructure health
-docker compose -f docker-compose.test.yml ps
-docker compose -f docker-compose.test.yml logs
+docker compose -f docker-compose.test-infrastructure.yml ps
+docker compose -f docker-compose.test-infrastructure.yml logs
 
-# Clean up test environment
-make test-clean
+# Monitor infrastructure resources
+docker stats $(docker compose -f docker-compose.test-infrastructure.yml ps -q)
+
+# Clean up infrastructure  
+docker compose -f docker-compose.test-infrastructure.yml down -v
 ```
 
-## ✅ Production Readiness Checklist
+## 🔧 Infrastructure Integration Readiness Checklist
 
-### Phase 1 Completion ✅ (48/48 PASSING)
-- ✅ All event system tests passing (EventEnvelope, broker segregation)
-- ✅ Broker segregation validated (topic namespacing, cache isolation)
-- ✅ Strategy framework functional (momentum & mean reversion)
-- ✅ Configuration handling robust (multi-broker settings)
-- ✅ Error handling patterns working (DLQ, retry mechanisms)
-- ✅ **NEW**: All 20 instruments validated 
-- ✅ **NEW**: Realistic market data simulation
+### Layer 1: Contract Validation Tests 🔧 IMPLEMENTING
+- 🔧 Service interface method existence validation (PipelineMetricsCollector.increment_count)
+- 🔧 Method signature compliance checking (parameter counts, types)
+- 🔧 Protocol implementation validation (duck typing compatibility)
+- 🔧 Return type annotation compliance verification
+- **Status**: CRITICAL - Prevents AttributeError exceptions in production
 
-### Phase 2 Status 🔧 (Partial Implementation)
-- ✅ Portfolio Manager service initialization working
-- ✅ Market Feed service integration (10/12 tests passing)
-- 🔧 Risk Manager, Strategy Runner, Trading Engine need fixture updates
-- ✅ Infrastructure dependencies healthy
-- ✅ Service import issues resolved
+### Layer 2: Real Infrastructure Integration Tests 🔧 IMPLEMENTING
+- 🔧 Redis type conversion testing (bytes vs string modes)
+- 🔧 Kafka message serialization round-trip validation
+- 🔧 PostgreSQL connection management and transaction handling
+- 🔧 Infrastructure performance benchmarking under load
+- **Status**: CRITICAL - Prevents TypeError and connection issues
 
-### Phase 3 Completion ✅ (25/30 PASSING)
-- ✅ Complete end-to-end trading pipeline working (9/10 tests)
-- ✅ Multi-broker isolation verified
-- ✅ System resilience validated (10/10 performance tests)
-- ✅ Performance targets met (>500 ticks/second)
-- ✅ Cross-service integration working
+### Layer 3: Schema Completeness Validation 🔧 IMPLEMENTING  
+- 🔧 EventType enum completeness (including SYSTEM_ERROR)
+- 🔧 SignalType reference validation across codebase
+- 🔧 Event data structure consistency validation
+- 🔧 Schema evolution and backwards compatibility
+- **Status**: CRITICAL - Prevents missing enum AttributeError exceptions
 
-### 🏆 **Overall Achievement**: 
-The Alpha Panda trading system is **PRODUCTION READY** with comprehensive validation:
-- ✅ **Core Architecture**: 100% unit test coverage
-- ✅ **End-to-End Flow**: 83% E2E test coverage  
-- ✅ **All Instruments**: Complete coverage of instruments.csv
-- ✅ **Performance**: Exceeds all throughput targets
-- ✅ **Multi-Broker**: Complete isolation and routing validated
+### Layer 4: Error Path Integration Tests 🔧 IMPLEMENTING
+- 🔧 DLQ error handling with real Kafka topics
+- 🔧 Connection failure recovery scenarios  
+- 🔧 Resource exhaustion and memory leak detection
+- 🔧 Graceful degradation under infrastructure failures
+- **Status**: CRITICAL - Validates error handling in production scenarios
+
+### 🚨 **Migration Status**: 
+The Alpha Panda testing framework is being **MIGRATED** to Infrastructure Integration Testing:
+- 🔧 **Contract Validation**: Implementing to prevent method call errors
+- 🔧 **Real Infrastructure**: Replacing mocks with actual components
+- 🔧 **Schema Validation**: Adding enum completeness checks
+- 🔧 **Error Path Testing**: Comprehensive failure scenario coverage
+- 🔧 **Performance Integration**: Real infrastructure performance validation
 
 ---
 
-**Last Updated**: 2025-08-27 | **Status**: ✅ **PRODUCTION READY** | **Test Coverage**: 73/78 (94%) | **Critical Path**: 100% Validated
+**Last Updated**: 2025-08-29 | **Status**: 🔄 **INFRASTRUCTURE INTEGRATION MIGRATION** | **Priority**: 🚨 **CRITICAL - PREVENTS PRODUCTION FAILURES**

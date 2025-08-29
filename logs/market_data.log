@@ -1,52 +1,20 @@
-{"channel": "market_data", "event": "\ud83d\ude80 Starting Market Feed Service...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.391292Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Loaded 20 instruments from CSV for subscription", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.392004Z"}
-{"channel": "market_data", "event": "\u2705 Instruments loaded into database successfully", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.429772Z"}
-{"channel": "market_data", "event": "\u2705 Market Feed Service started and is connecting to WebSocket.", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.444530Z"}
-{"channel": "market_data", "event": "\u2705 WebSocket connected. Subscribing to instruments...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.587076Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Subscribed to 20 instruments in FULL mode (complete data + 5-level depth)", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.587641Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.840542Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.840893Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 7, Depth: False, OHLC: True, Volume: False", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.841431Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.842974Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.843167Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.843664Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.844082Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.845686Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T11:31:39.846127Z"}
-{"channel": "market_data", "event": "\ud83d\uded1 Stopping Market Feed Service WebSocket...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T12:38:27.616155Z"}
-{"channel": "market_data", "event": "\u2705 Market Feed Service stopped.", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T12:38:27.620094Z"}
-{"channel": "market_data", "event": "\u2705 Market Feed Service stopped.", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:52:46.444700Z"}
-{"channel": "market_data", "event": "\ud83d\ude80 Starting Market Feed Service...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.045298Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Loaded 20 instruments from CSV for subscription", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.046353Z"}
-{"channel": "market_data", "event": "\u2705 Instruments loaded into database successfully", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.084642Z"}
-{"channel": "market_data", "event": "\u2705 Market Feed Service started and is connecting to WebSocket.", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.099914Z"}
-{"channel": "market_data", "event": "\u2705 WebSocket connected. Subscribing to instruments...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.250521Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Subscribed to 20 instruments in FULL mode (complete data + 5-level depth)", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.251059Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.508841Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.509073Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.509659Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.510757Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.511738Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.512158Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.513842Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.515481Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.516281Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:53:29.516740Z"}
-{"channel": "market_data", "event": "\ud83d\ude80 Starting Market Feed Service...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:09.609303Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Loaded 20 instruments from CSV for subscription", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:09.609854Z"}
-{"channel": "market_data", "event": "\u2705 Instruments loaded into database successfully", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:09.691773Z"}
-{"channel": "market_data", "event": "\u2705 Market Feed Service started and is connecting to WebSocket.", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:09.705547Z"}
-{"channel": "market_data", "event": "\u2705 WebSocket connected. Subscribing to instruments...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:09.861530Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Subscribed to 20 instruments in FULL mode (complete data + 5-level depth)", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:09.862096Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:10.124796Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:10.125071Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:10.125721Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:10.127478Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:10.128609Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:10.131968Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:10.132499Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:10.133594Z"}
-{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:10.135446Z"}
-{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:56:10.136240Z"}
-{"channel": "market_data", "event": "\ud83d\uded1 Stopping Market Feed Service WebSocket...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:58:19.551905Z"}
-{"channel": "market_data", "event": "\u2705 Market Feed Service stopped.", "level": "info", "logger": "market_feed", "timestamp": "2025-08-28T15:58:19.553391Z"}
+{"channel": "market_data", "event": "\ud83d\ude80 Starting Market Feed Service...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:45.899001Z"}
+{"channel": "market_data", "event": "\ud83d\udcca Loaded 20 instruments from CSV for subscription", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:45.899589Z"}
+{"channel": "market_data", "event": "\u2705 Instruments loaded into database successfully", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:45.941767Z"}
+{"channel": "market_data", "event": "\u2705 Market Feed Service started and is connecting to WebSocket.", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:45.956064Z"}
+{"channel": "market_data", "event": "Tick processor worker started.", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:45.956477Z"}
+{"channel": "market_data", "event": "\u2705 WebSocket connected. Subscribing to instruments...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.051740Z"}
+{"channel": "market_data", "event": "\ud83d\udcca Subscribed to 20 instruments in FULL mode (complete data + 5-level depth)", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.052208Z"}
+{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.282818Z"}
+{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.283118Z"}
+{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.283536Z"}
+{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.283678Z"}
+{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.283921Z"}
+{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.284061Z"}
+{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.284305Z"}
+{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.284430Z"}
+{"channel": "market_data", "event": "\ud83d\udd0d Tick data richness - Fields: 17, Depth: True, OHLC: True, Volume: True", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.284601Z"}
+{"channel": "market_data", "event": "\ud83d\udcca Market depth: 5 buy levels, 5 sell levels", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:27:46.284705Z"}
+{"channel": "market_data", "event": "Tick processor worker stopping.", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:49:50.797795Z"}
+{"channel": "market_data", "event": "\ud83d\uded1 Stopping Market Feed Service WebSocket...", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:49:50.797977Z"}
+{"channel": "market_data", "event": "\u2705 Market Feed Service stopped.", "level": "info", "logger": "market_feed", "timestamp": "2025-08-29T09:49:50.804028Z"}

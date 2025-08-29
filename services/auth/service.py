@@ -29,6 +29,24 @@ class AuthService:
         await self.auth_manager.stop()
         logger.info("AuthService stopped.")
 
+    async def get_access_token(self) -> Optional[str]:
+        """
+        Public method to get access token for authenticated services.
+        Returns None if not authenticated.
+        """
+        if not self.is_authenticated():
+            return None
+        
+        try:
+            return await self.auth_manager.get_access_token()
+        except Exception as e:
+            logger.error(f"Failed to retrieve access token: {e}")
+            return None
+
+    async def get_status(self) -> bool:
+        """Returns the current status of the authentication service."""
+        return self.auth_manager.status != AuthStatus.STOPPED
+
     async def establish_zerodha_session(self, access_token: str) -> LoginResponse:
         """
         Establishes a new trading session using a pre-authorized Zerodha access token.

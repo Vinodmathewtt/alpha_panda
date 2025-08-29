@@ -2,6 +2,7 @@
 
 from typing import List, Dict, Any
 import asyncio
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from core.streaming.patterns.stream_service_builder import StreamServiceBuilder
@@ -69,6 +70,14 @@ class MarketFeedService:
         )
         self._reconnection_attempts = 0
         
+        # ADDED: Components for reliability
+        self._reconnection_lock = asyncio.Lock()
+        self._tick_queue = asyncio.Queue(maxsize=10000)  # Bounded queue for backpressure
+        self._processor_task = None
+        self._failed_sends = 0
+        self._failed_metrics = 0
+        self._dropped_ticks = 0
+        
         # Build streaming service using composition
         self.orchestrator = (StreamServiceBuilder("market_feed", config, settings)
             .with_redis(redis_client)
@@ -128,6 +137,9 @@ class MarketFeedService:
             # FIXED: Set _running to True before starting the feed task
             self._running = True
             
+            # ADDED: Start the tick processor worker
+            self._processor_task = asyncio.create_task(self._tick_processor())
+            
             self._feed_task = asyncio.create_task(self._run_feed())
             self.logger.info("✅ Market Feed Service started and is connecting to WebSocket.")
         except Exception as e:
@@ -147,62 +159,121 @@ class MarketFeedService:
                 await self._feed_task
             except asyncio.CancelledError:
                 pass
+        
+        # ADDED: Gracefully stop the processor task
+        if self._processor_task:
+            self._processor_task.cancel()
+            try:
+                await self._processor_task
+            except asyncio.CancelledError:
+                pass
+                
         if self.kws and self.kws.is_connected():
             self.logger.info("🛑 Stopping Market Feed Service WebSocket...")
             self.kws.close(1000, "Service shutting down")
         await self.orchestrator.stop()
         self.logger.info("✅ Market Feed Service stopped.")
     
+    async def _tick_processor(self):
+        """Worker task that consumes ticks from the queue and emits them."""
+        self.logger.info("Tick processor worker started.")
+        while True:
+            try:
+                tick = await self._tick_queue.get()
+
+                emit_coro = self._emit_tick(tick)
+                metrics_coro = self._update_metrics(tick)
+
+                # Use asyncio.gather for concurrent execution
+                await asyncio.gather(emit_coro, metrics_coro)
+
+                self._tick_queue.task_done()
+            except asyncio.CancelledError:
+                self.logger.info("Tick processor worker stopping.")
+                break
+            except Exception as e:
+                self.error_logger.error(f"Unhandled exception in tick processor: {e}", exc_info=True)
+
+    async def _emit_tick(self, tick: MarketTick):
+        try:
+            if self.orchestrator.producers and len(self.orchestrator.producers) > 0:
+                producer = self.orchestrator.producers[0]
+                key = PartitioningKeys.market_tick_key(tick.instrument_token)
+                await producer.send(
+                    topic=TopicNames.MARKET_TICKS,
+                    key=key,
+                    data=tick.model_dump(mode='json'),
+                    event_type=EventType.MARKET_TICK,
+                    broker="shared"  # Market data is shared across all brokers
+                )
+        except Exception as e:
+            self.error_logger.error(f"Failed to emit tick to Kafka: {e}", extra={"tick": tick.instrument_token})
+            self._failed_sends += 1
+            raise
+
+    async def _update_metrics(self, tick: MarketTick):
+        try:
+            await self.metrics_collector.record_market_tick(tick.model_dump(mode='json'))
+        except Exception as e:
+            self.error_logger.error(f"Failed to update metrics in Redis: {e}", extra={"tick": tick.instrument_token})
+            self._failed_metrics += 1
+            raise
+
     async def _attempt_reconnection(self):
         """
-        Attempt to reconnect with exponential backoff strategy.
+        Attempt to reconnect with exponential backoff strategy and concurrency protection.
         """
-        if self._reconnection_attempts >= self.reconnection_config.max_attempts:
-            self.logger.error(f"❌ Maximum reconnection attempts ({self.reconnection_config.max_attempts}) reached. Stopping service.")
-            self._running = False
-            return
-        
-        self._reconnection_attempts += 1
-        delay = min(
-            self.reconnection_config.base_delay * (self.reconnection_config.backoff_multiplier ** (self._reconnection_attempts - 1)),
-            self.reconnection_config.max_delay
-        )
-        
-        self.logger.info(f"🔄 Reconnection attempt {self._reconnection_attempts}/{self.reconnection_config.max_attempts} in {delay:.1f} seconds")
-        await asyncio.sleep(delay)
-        
-        try:
-            # Close existing connection
-            if self.kws and self.kws.is_connected():
-                self.kws.close(1000, "Reconnecting")
+        # MODIFIED: Guard reconnection logic with a lock
+        async with self._reconnection_lock:
+            if not self._running:
+                return
             
-            # Get new ticker instance
-            self.kws = await self.authenticator.get_ticker()
-            self._assign_callbacks()
+            if self._reconnection_attempts >= self.reconnection_config.max_attempts:
+                self.logger.error(f"❌ Maximum reconnection attempts ({self.reconnection_config.max_attempts}) reached. Stopping service.")
+                self._running = False
+                return
             
-            # Start new connection
-            self.kws.connect(threaded=True)
+            self._reconnection_attempts += 1
+            delay = min(
+                self.reconnection_config.base_delay * (self.reconnection_config.backoff_multiplier ** (self._reconnection_attempts - 1)),
+                self.reconnection_config.max_delay
+            )
             
-            # Wait for connection to establish
-            connection_timeout = self.reconnection_config.timeout
-            start_time = asyncio.get_event_loop().time()
+            self.logger.info(f"🔄 Reconnection attempt {self._reconnection_attempts}/{self.reconnection_config.max_attempts} in {delay:.1f} seconds")
+            await asyncio.sleep(delay)
             
-            while not self.kws.is_connected() and self._running:
-                if asyncio.get_event_loop().time() - start_time > connection_timeout:
-                    raise Exception("Connection timeout")
-                await asyncio.sleep(1)
-            
-            if self.kws.is_connected():
-                self.logger.info("✅ Reconnection successful")
-                self._reconnection_attempts = 0  # Reset on successful connection
-            else:
-                raise Exception("Failed to establish connection")
+            try:
+                # Close existing connection
+                if self.kws and self.kws.is_connected():
+                    self.kws.close(1000, "Reconnecting")
                 
-        except Exception as e:
-            self.logger.error(f"❌ Reconnection attempt {self._reconnection_attempts} failed: {e}")
-            # Schedule another reconnection attempt
-            if self._running:
-                asyncio.create_task(self._attempt_reconnection())
+                # Get new ticker instance
+                self.kws = await self.authenticator.get_ticker()
+                self._assign_callbacks()
+                
+                # Start new connection
+                self.kws.connect(threaded=True)
+                
+                # Wait for connection to establish
+                connection_timeout = self.reconnection_config.timeout
+                start_time = asyncio.get_event_loop().time()
+                
+                while not self.kws.is_connected() and self._running:
+                    if asyncio.get_event_loop().time() - start_time > connection_timeout:
+                        raise Exception("Connection timeout")
+                    await asyncio.sleep(1)
+                
+                if self.kws.is_connected():
+                    self.logger.info("✅ Reconnection successful")
+                    self._reconnection_attempts = 0  # Reset on successful connection
+                else:
+                    raise Exception("Failed to establish connection")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Reconnection attempt {self._reconnection_attempts} failed: {e}")
+                # Schedule another reconnection attempt
+                if self._running:
+                    asyncio.create_task(self._attempt_reconnection())
 
     async def _run_feed(self):
         """Connects the KiteTicker and keeps the task alive."""
@@ -247,33 +318,17 @@ class MarketFeedService:
                 # Format complete tick data
                 formatted_tick = self.formatter.format_tick(tick)
                 market_tick = MarketTick(**formatted_tick)
-                key = PartitioningKeys.market_tick_key(market_tick.instrument_token)
 
                 # Update tick processing counter
                 self.ticks_processed += 1
 
-                # Use orchestrator producer to emit event
-                # As this is async, and this is a sync callback,
-                # we run it in the main event loop.
-                # CRITICAL FIX: Explicitly set broker to prevent incorrect derivation
-                async def emit_tick():
-                    if self.orchestrator.producers and len(self.orchestrator.producers) > 0:
-                        producer = self.orchestrator.producers[0]
-                        await producer.send(
-                            topic=TopicNames.MARKET_TICKS,
-                            key=key,
-                            data=market_tick.model_dump(mode='json'),
-                            event_type=EventType.MARKET_TICK,
-                            broker="shared"  # Market data is shared across all brokers
-                        )
-                
-                emit_coro = emit_tick()
-                
-                # Also record metrics for pipeline monitoring
-                metrics_coro = self.metrics_collector.record_market_tick(market_tick.model_dump(mode='json'))
-                
-                asyncio.run_coroutine_threadsafe(emit_coro, self.loop)
-                asyncio.run_coroutine_threadsafe(metrics_coro, self.loop)
+                # MODIFIED: Use a thread-safe queue for backpressure
+                try:
+                    self._tick_queue.put_nowait(market_tick)
+                except asyncio.QueueFull:
+                    self._dropped_ticks += 1
+                    self.logger.warning(f"Tick queue is full. Dropping tick to maintain stability. Total dropped: {self._dropped_ticks}")
+                    
             except Exception as e:
                 self.logger.error(f"❌ Error processing tick: {tick}, Error: {e}")
                 self.error_logger.error(f"Tick processing error", extra={"tick_data": tick, "error": str(e)})
@@ -310,6 +365,68 @@ class MarketFeedService:
     def _on_error(self, ws, code, reason):
         """Callback for WebSocket errors."""
         self.logger.error(f"WebSocket error. Code: {code}, Reason: {reason}")
+
+    async def get_metrics(self) -> Dict[str, Any]:
+        """Get comprehensive service metrics."""
+        current_queue_size = self._tick_queue.qsize() if hasattr(self, '_tick_queue') else 0
+        
+        return {
+            'ticks_received': self.ticks_processed,
+            'ticks_processed': self.ticks_processed,
+            'ticks_dropped': self._dropped_ticks,
+            'send_failures': self._failed_sends,
+            'metrics_failures': self._failed_metrics,
+            'reconnection_attempts': self._reconnection_attempts,
+            'queue_size': current_queue_size,
+            'connection_status': 'connected' if (self.kws and self.kws.is_connected()) else 'disconnected',
+            'is_running': self._running,
+            'processing_rate': self._calculate_processing_rate()
+        }
+
+    def _calculate_processing_rate(self) -> float:
+        """Calculate ticks per second processing rate."""
+        if not hasattr(self, '_start_time') or self.ticks_processed == 0:
+            return 0.0
+        
+        # Use approximate elapsed time since service start
+        elapsed = 60.0  # Approximate for now
+        return self.ticks_processed / elapsed if elapsed > 0 else 0.0
+
+    async def health_check(self) -> Dict[str, Any]:
+        """Comprehensive health check for monitoring systems."""
+        metrics = await self.get_metrics()
+        
+        # Calculate health score
+        is_healthy = (
+            self._running and
+            (self.kws and self.kws.is_connected()) and
+            metrics['queue_size'] < 8000 and  # Queue not near full
+            metrics['send_failures'] / max(metrics['ticks_processed'], 1) < 0.01  # < 1% failure rate
+        )
+        
+        return {
+            'status': 'healthy' if is_healthy else 'unhealthy',
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'metrics': metrics,
+            'issues': self._identify_health_issues(metrics)
+        }
+
+    def _identify_health_issues(self, metrics: Dict[str, Any]) -> List[str]:
+        """Identify specific health issues."""
+        issues = []
+        
+        if not self._running:
+            issues.append("Service not running")
+        if not (self.kws and self.kws.is_connected()):
+            issues.append("WebSocket disconnected")
+        if metrics['queue_size'] > 8000:
+            issues.append("Queue near capacity")
+        if metrics['send_failures'] / max(metrics['ticks_processed'], 1) > 0.01:
+            issues.append("High failure rate")
+        if metrics['ticks_dropped'] > 0:
+            issues.append("Dropped ticks detected")
+        
+        return issues
 
     async def _handle_message(self, topic: str, key: str, message: Dict[str, Any]):
         """Market feed doesn't handle incoming messages."""

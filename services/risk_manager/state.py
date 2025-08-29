@@ -35,10 +35,12 @@ class RiskStateManager(CollectionStateManager):
             trade_values = await self._get_multiple_values(trade_keys)
             for key, value in trade_values.items():
                 if value is not None:
+                    # Ensure key is string (decode if bytes)
+                    key_str = key.decode('utf-8') if isinstance(key, bytes) else key
                     # Extract strategy_date part from key
-                    key_parts = key.split(":")
-                    if "daily_trades_" in key:
-                        trade_key_part = key.split("daily_trades_")[1]
+                    key_parts = key_str.split(":")
+                    if "daily_trades_" in key_str:
+                        trade_key_part = key_str.split("daily_trades_")[1]
                         daily_trades[f"daily_trades_{trade_key_part}"] = int(value)
         
         # Get recent prices using KV manager pattern
@@ -50,10 +52,12 @@ class RiskStateManager(CollectionStateManager):
             price_values = await self._get_multiple_values(price_keys)
             for key, value in price_values.items():
                 if value is not None:
+                    # Ensure key is string (decode if bytes)
+                    key_str = key.decode('utf-8') if isinstance(key, bytes) else key
                     # Extract instrument token from key
-                    key_parts = key.split(":")
-                    if "recent_price_" in key:
-                        instrument_token = key.split("recent_price_")[1]
+                    key_parts = key_str.split(":")
+                    if "recent_price_" in key_str:
+                        instrument_token = key_str.split("recent_price_")[1]
                         recent_prices[f"recent_price_{instrument_token}"] = float(value)
         
         return {

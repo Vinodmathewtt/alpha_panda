@@ -33,7 +33,7 @@ async def get_system_info(
                 "disk_total_gb": round(psutil.disk_usage('/').total / (1024**3), 2)
             },
             "application": {
-                "broker_namespace": settings.broker_namespace,
+                "active_brokers": settings.active_brokers,
                 "environment": getattr(settings, 'environment', 'development'),
                 "api_version": "2.1.0",
                 "startup_time": datetime.utcnow().isoformat()
@@ -44,13 +44,13 @@ async def get_system_info(
             status="success",
             data=system_info,
             message="System information retrieved",
-            broker=settings.broker_namespace
+            broker=settings.active_brokers[0] if settings.active_brokers else "unknown"
         )
     except Exception as e:
         return StandardResponse(
             status="error",
             message=f"Failed to get system info: {str(e)}",
-            broker=settings.broker_namespace
+            broker=settings.active_brokers[0] if settings.active_brokers else "unknown"
         )
 
 @router.get("/metrics", response_model=StandardResponse[Dict[str, Any]])
@@ -91,13 +91,13 @@ async def get_system_metrics(
             status="success",
             data=metrics,
             message="System metrics retrieved",
-            broker=settings.broker_namespace
+            broker=settings.active_brokers[0] if settings.active_brokers else "unknown"
         )
     except Exception as e:
         return StandardResponse(
             status="error",
             message=f"Failed to get system metrics: {str(e)}",
-            broker=settings.broker_namespace
+            broker=settings.active_brokers[0] if settings.active_brokers else "unknown"
         )
 
 @router.get("/processes", response_model=StandardResponse[Dict[str, Any]])
@@ -143,13 +143,13 @@ async def get_process_info(
             status="success",
             data=process_info,
             message="Process information retrieved",
-            broker=settings.broker_namespace
+            broker=settings.active_brokers[0] if settings.active_brokers else "unknown"
         )
     except Exception as e:
         return StandardResponse(
             status="error",
             message=f"Failed to get process info: {str(e)}",
-            broker=settings.broker_namespace
+            broker=settings.active_brokers[0] if settings.active_brokers else "unknown"
         )
 
 @router.get("/environment", response_model=StandardResponse[Dict[str, Any]])
@@ -159,16 +159,12 @@ async def get_environment_info(
     """Get environment configuration (non-sensitive)"""
     try:
         env_info = {
-            "broker_namespace": settings.broker_namespace,
+            "active_brokers": settings.active_brokers,
             "redis_config": {
-                "host": settings.redis.host if hasattr(settings, 'redis') else "unknown",
-                "port": settings.redis.port if hasattr(settings, 'redis') else "unknown",
-                "database": settings.redis.database if hasattr(settings, 'redis') else "unknown"
+                "url": settings.redis.url if hasattr(settings, 'redis') else "unknown"
             },
             "database_config": {
-                "host": settings.database.host if hasattr(settings, 'database') else "unknown",
-                "port": settings.database.port if hasattr(settings, 'database') else "unknown",
-                "database": settings.database.name if hasattr(settings, 'database') else "unknown"
+                "postgres_url": settings.database.postgres_url if hasattr(settings, 'database') else "unknown"
             },
             "api_config": {
                 "cors_enabled": True,
@@ -189,11 +185,11 @@ async def get_environment_info(
             status="success",
             data=env_info,
             message="Environment information retrieved",
-            broker=settings.broker_namespace
+            broker=settings.active_brokers[0] if settings.active_brokers else "unknown"
         )
     except Exception as e:
         return StandardResponse(
             status="error",
             message=f"Failed to get environment info: {str(e)}",
-            broker=settings.broker_namespace
+            broker=settings.active_brokers[0] if settings.active_brokers else "unknown"
         )

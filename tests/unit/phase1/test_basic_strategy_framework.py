@@ -57,7 +57,7 @@ class TestBasicStrategyInterface:
         market_data = MarketData(
             instrument_token=256265,
             last_price=Decimal("21500.50"),
-            volume=1000,
+            volume_traded=1000,
             timestamp=datetime.now(timezone.utc)
         )
         
@@ -84,7 +84,7 @@ class TestBasicStrategyInterface:
         market_data = MarketData(
             instrument_token=256265,
             last_price=Decimal("21600.00"),
-            volume=500,
+            volume_traded=500,
             timestamp=datetime.now(timezone.utc)
         )
         
@@ -113,7 +113,7 @@ class TestMultiStrategyExecution:
         market_data = MarketData(
             instrument_token=256265,
             last_price=Decimal("21700.00"),
-            volume=1200,
+            volume_traded=1200,
             timestamp=datetime.now(timezone.utc)
         )
         
@@ -149,14 +149,14 @@ class TestStrategyMarketDataHandling:
         market_data = MarketData(
             instrument_token=256265,
             last_price=Decimal("21500.50"),
-            volume=1000,
+            volume_traded=1000,  # Use volume_traded for MarketTick schema
             timestamp=datetime.now(timezone.utc)
         )
         
         # Verify required fields
         assert market_data.instrument_token == 256265
         assert market_data.last_price == Decimal("21500.50")
-        assert market_data.volume == 1000
+        assert market_data.volume_traded == 1000  # MarketTick uses volume_traded, not volume
         assert market_data.timestamp is not None
         
     def test_trading_signal_validation(self):
@@ -202,7 +202,7 @@ class TestStrategyMarketDataHandling:
         market_data = MarketData(
             instrument_token=256265,
             last_price=Decimal("21500.00"),
-            volume=1000,
+            volume_traded=1000,
             timestamp=datetime.now(timezone.utc)
         )
         

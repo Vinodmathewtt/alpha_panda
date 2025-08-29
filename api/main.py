@@ -16,8 +16,6 @@ from api.routers import (
     logs, alerts, realtime, system
 )
 from dashboard.routers import main as dashboard_main, realtime as dashboard_realtime
-from dashboard.middleware.basic import SecurityMiddleware
-from dashboard.middleware.metrics import PerformanceMiddleware
 
 logger = structlog.get_logger()
 
@@ -105,15 +103,16 @@ def create_app() -> FastAPI:
     # Add middleware (order matters - first added is outermost, executed first)
     app.add_middleware(ErrorHandlingMiddleware)
     
-    # Add dashboard-specific middleware
-    app.add_middleware(PerformanceMiddleware)
-    app.add_middleware(SecurityMiddleware)
-    
     # Add authentication middleware
     auth_service = container.auth_service()
     app.add_middleware(AuthenticationMiddleware, auth_service=auth_service)
     
-    app.add_middleware(RateLimitingMiddleware, calls=100, period=60)
+    app.add_middleware(
+        RateLimitingMiddleware, 
+        redis_client=container.redis_client(),
+        calls=100, 
+        period=60
+    )
     
     # Get CORS settings from configuration
     settings = container.settings()

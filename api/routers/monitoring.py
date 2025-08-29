@@ -62,7 +62,7 @@ async def health_check(
         return {
             "status": "success",
             "data": health_status,
-            "broker": getattr(settings, 'broker_namespace', getattr(settings, 'active_brokers', ['unknown'])[0])
+            "broker": settings.active_brokers[0] if settings.active_brokers else "unknown"
         }
         
     except Exception as e:
@@ -83,7 +83,7 @@ async def health_check(
         return {
             "status": "error",
             "message": f"Health check failed: {str(e)}",
-            "broker": getattr(settings, 'broker_namespace', getattr(settings, 'active_brokers', ['unknown'])[0])
+            "broker": settings.active_brokers[0] if settings.active_brokers else "unknown"
         }
 
 
@@ -104,7 +104,7 @@ async def pipeline_status(
     
     try:
         # Get current pipeline validation status
-        broker_ns = getattr(settings, 'broker_namespace', getattr(settings, 'active_brokers', ['unknown'])[0])
+        broker_ns = settings.active_brokers[0] if settings.active_brokers else "unknown"
         validation_key = f"pipeline:validation:{broker_ns}"
         validation_data = await redis_client.get(validation_key)
         
@@ -174,7 +174,8 @@ async def pipeline_history(
     """Get pipeline health history"""
     try:
         # Get health history from Redis
-        history_key = f"pipeline:health_history:{settings.broker_namespace}"
+        broker_ns = settings.active_brokers[0] if settings.active_brokers else "unknown"
+        history_key = f"pipeline:health_history:{broker_ns}"
         history_data = await redis_client.lrange(history_key, 0, limit - 1)
         
         if history_data:
@@ -190,7 +191,7 @@ async def pipeline_history(
                 "count": len(history),
                 "limit": limit
             },
-            "broker": settings.broker_namespace
+            "broker": broker_ns
         }
         
     except Exception as e:
@@ -224,8 +225,9 @@ async def pipeline_stage_status(
             )
         
         # Get stage-specific data
-        last_key = f"pipeline:{stage_name}:{settings.broker_namespace}:last"
-        count_key = f"pipeline:{stage_name}:{settings.broker_namespace}:count"
+        broker_ns = settings.active_brokers[0] if settings.active_brokers else "unknown"
+        last_key = f"pipeline:{stage_name}:{broker_ns}:last"
+        count_key = f"pipeline:{stage_name}:{broker_ns}:count"
         
         last_data_str = await redis_client.get(last_key)
         total_count = await redis_client.get(count_key) or 0
@@ -233,7 +235,7 @@ async def pipeline_stage_status(
         stage_data = {
             "stage_name": stage_name,
             "total_count": int(total_count),
-            "broker": settings.broker_namespace
+            "broker": broker_ns
         }
         
         if last_data_str:
@@ -295,7 +297,7 @@ async def log_statistics(
                 "multi_channel_enabled": getattr(settings.logging, 'multi_channel_enabled', True) if hasattr(settings, 'logging') else True,
                 "logs_directory": getattr(settings.logging, 'logs_dir', 'logs') if hasattr(settings, 'logging') else 'logs'
             },
-            "broker": settings.broker_namespace
+            "broker": settings.active_brokers[0] if settings.active_brokers else "unknown"
         }
         
     except Exception as e:
@@ -318,7 +320,7 @@ async def reset_pipeline_metrics(
         return {
             "status": "success",
             "message": "Pipeline metrics reset successfully",
-            "broker": settings.broker_namespace
+            "broker": settings.active_brokers[0] if settings.active_brokers else "unknown"
         }
         
     except Exception as e:
@@ -353,7 +355,7 @@ async def get_metrics_summary(
         total_stages = len(stages)
         
         # Get total counts across all stages
-        broker_ns = getattr(settings, 'broker_namespace', getattr(settings, 'active_brokers', ['unknown'])[0])
+        broker_ns = settings.active_brokers[0] if settings.active_brokers else "unknown"
         total_events = 0
         for stage_name in ["market_ticks", "signals", "orders", "portfolio_updates"]:
             count_key = f"pipeline:{stage_name}:{broker_ns}:count"

@@ -25,8 +25,8 @@ class BrokerAuthenticator:
             raise ConnectionError("Cannot start market feed: No authenticated Zerodha session found.")
 
         try:
-            # Retrieve the access token from the authenticated session
-            access_token = await self._auth_service.auth_manager.get_access_token()
+            # Use public API instead of reaching into protected attributes
+            access_token = await self._auth_service.get_access_token()
             api_key = self._settings.zerodha.api_key
 
             if not all([api_key, access_token]):

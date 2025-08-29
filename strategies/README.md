@@ -7,31 +7,45 @@ Alpha Panda implements a **pure strategy pattern** where trading strategies are 
 ## Strategy Architecture
 
 ### Pure Strategy Pattern
-- **Inherit from BaseStrategy**: All strategies extend `BaseStrategy` class
-- **Pure Functions**: Strategies receive `MarketTick`, return `TradingSignal`
+- **Inherit from BaseStrategy**: All strategies extend `BaseStrategy` class  
+- **Generator Functions**: Strategies receive `MarketData`, yield `TradingSignal` objects
 - **No Infrastructure Access**: Strategies cannot directly access Kafka, database, etc.
-- **Portfolio Context**: Strategies receive read-only `PortfolioContext` for position awareness
+- **Internal History Management**: Strategies maintain their own market data history with configurable limits
+- **Schema Integration**: Uses standardized `core.schemas.events` for all data models
 
 ### Strategy Interface
 
 ```python
-from strategies.base import BaseStrategy
-from core.schemas.events import MarketTick, TradingSignal
+from strategies.base import BaseStrategy, MarketData
+from core.schemas.events import TradingSignal, SignalType
+from typing import Generator
+from decimal import Decimal
 
 class MyStrategy(BaseStrategy):
-    def on_market_data(self, tick: MarketTick, context: PortfolioContext) -> Optional[TradingSignal]:
+    def on_market_data(self, data: MarketData) -> Generator[TradingSignal, None, None]:
         """
-        Process market tick and generate trading signal if conditions are met.
+        Process market tick and yield trading signals.
         
         Args:
-            tick: Market data with OHLC, volume, etc.
-            context: Read-only portfolio state and positions
+            data: Market data tick (MarketTick schema with last_price, timestamp, etc.)
             
-        Returns:
-            TradingSignal if trade conditions are met, None otherwise
+        Yields:
+            TradingSignal: Generated trading signals with confidence scores
         """
-        # Pure strategy logic here
-        return signal
+        # Add to internal history
+        self._add_market_data(data)
+        
+        # Implement strategy logic here
+        if some_condition:
+            yield TradingSignal(
+                strategy_id=self.strategy_id,
+                instrument_token=data.instrument_token,
+                signal_type=SignalType.BUY,
+                quantity=100,
+                price=data.last_price,
+                timestamp=data.timestamp,
+                confidence=0.85  # Strategy confidence score (0.0 to 1.0)
+            )
 ```
 
 ## Available Strategies
@@ -74,11 +88,13 @@ risk_limits:
 ## Strategy Execution
 
 ### Strategy Runner Service
-The Strategy Runner Service (`services/strategy_runner/`) hosts and executes strategies:
-1. **Load Strategies**: Reads active strategies from database
-2. **Filter Market Data**: Routes ticks to relevant strategies based on instrument configuration
-3. **Execute Strategy Logic**: Calls `on_market_data()` method
-4. **Publish Signals**: Emits signals to `{broker}.signals.raw` topic
+The Strategy Runner Service (`services/strategy_runner/`) hosts and executes strategies with enhanced reliability:
+1. **Load Strategies**: Reads active strategies from database with YAML fallback
+2. **Efficient Routing**: Uses O(1) instrument-to-strategies mapping for performance
+3. **Robust Parsing**: Defensive tick parsing with comprehensive error handling
+4. **Execute Strategy Logic**: Calls `on_market_data()` method with exception isolation
+5. **Concurrent Emission**: Publishes signals to `{broker}.signals.raw` topics concurrently
+6. **Pipeline Metrics**: Tracks signal generation metrics for monitoring
 
 ### Broker Segregation
 - **Paper Trading**: All signals go to paper trading by default
@@ -96,18 +112,55 @@ The Strategy Runner Service (`services/strategy_runner/`) hosts and executes str
 
 ### Strategy Testing
 ```python
-# Unit testing pattern
-strategy = MyStrategy(config)
-tick = create_test_tick()
-context = create_test_context()
+from strategies.momentum import SimpleMomentumStrategy
+from core.schemas.events import MarketTick
+from decimal import Decimal
+from datetime import datetime, timezone
 
-signal = strategy.on_market_data(tick, context)
-assert signal.action == "BUY"
+# Unit testing pattern
+strategy = SimpleMomentumStrategy(
+    strategy_id="test_momentum",
+    parameters={"momentum_threshold": 0.02, "position_size": 100},
+    brokers=["paper"],
+    instrument_tokens=[256265]
+)
+
+# Create test market data
+tick = MarketTick(
+    instrument_token=256265,
+    last_price=Decimal("21500.00"),
+    timestamp=datetime.now(timezone.utc),
+    volume_traded=1000
+)
+
+# Test signal generation
+signals = list(strategy.on_market_data(tick))
+if signals:
+    signal = signals[0]
+    assert signal.signal_type == "BUY"
+    assert signal.confidence is not None
+    assert 0.0 <= signal.confidence <= 1.0
 ```
 
 ### Best Practices
 - **Keep Pure**: No side effects, external API calls, or state mutation
-- **Type Safety**: Use Pydantic models for all data structures
-- **Error Handling**: Return None for invalid conditions, don't raise exceptions
-- **Logging**: Use correlation IDs for debugging across services
+- **Type Safety**: Use standardized schemas from `core.schemas.events`
+- **Error Handling**: Use generators to yield multiple signals, handle exceptions gracefully
+- **Confidence Scores**: Include confidence levels (0.0 to 1.0) in trading signals
+- **History Management**: Use `_add_market_data()` and `get_history()` for state management
 - **Configuration**: Make parameters configurable via YAML/database
+
+## Recent Improvements (2025-08-28)
+
+### Enhanced Robustness & Performance
+- **Schema Unification**: Eliminated data model duplication between strategies and core system
+- **Confidence Field Integration**: `TradingSignal` now includes confidence scores throughout pipeline
+- **Robust Tick Parsing**: Defensive parsing with comprehensive error handling and validation
+- **Concurrent Signal Emission**: Parallel signal publishing for improved throughput
+- **Pipeline Observability**: Full metrics integration for production monitoring
+
+### Breaking Changes (Backward Compatible)
+- Strategies now use `MarketTick` as `MarketData` (alias maintains compatibility)
+- `TradingSignal` confidence field available (optional, defaults to None)
+- Volume field changed from `volume` to `volume_traded` in MarketTick schema
+- Generator pattern for signal emission (yield multiple signals per tick)

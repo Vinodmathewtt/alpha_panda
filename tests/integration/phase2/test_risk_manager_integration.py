@@ -329,7 +329,7 @@ class TestRiskManagerIntegration:
         market_tick = MarketTick(
             instrument_token=256265,
             last_price=Decimal('2550.0'),
-            volume=1000,
+            volume_traded=1000,
             timestamp=datetime.now(timezone.utc),
             mode="full"
         )

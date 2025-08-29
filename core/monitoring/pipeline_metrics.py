@@ -298,6 +298,49 @@ class PipelineMetricsCollector:
                 "error": str(e)
             }
     
+    async def increment_count(self, metric_name: str, broker: str = None) -> None:
+        """Increment a metric counter (generic method for backwards compatibility)"""
+        try:
+            # Use the provided broker or fall back to instance broker_namespace
+            namespace = broker or self.broker_namespace
+            count_key = f"pipeline:{metric_name}:{namespace}:count"
+            await self.redis.incr(count_key)
+            
+            self.logger.debug("Metric count incremented", 
+                            metric=metric_name,
+                            broker=namespace)
+                            
+        except Exception as e:
+            self.logger.error("Failed to increment count", 
+                            metric=metric_name,
+                            error=str(e),
+                            broker=broker or self.broker_namespace)
+    
+    async def set_last_activity_timestamp(self, metric_name: str, broker: str = None) -> None:
+        """Set the last activity timestamp for a metric"""
+        try:
+            # Use the provided broker or fall back to instance broker_namespace  
+            namespace = broker or self.broker_namespace
+            timestamp = datetime.utcnow().isoformat()
+            
+            last_key = f"pipeline:{metric_name}:{namespace}:last_activity"
+            last_data = {
+                "timestamp": timestamp,
+                "metric": metric_name
+            }
+            
+            await self.redis.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            
+            self.logger.debug("Last activity timestamp set",
+                            metric=metric_name,
+                            broker=namespace)
+                            
+        except Exception as e:
+            self.logger.error("Failed to set last activity timestamp",
+                            metric=metric_name,
+                            error=str(e),
+                            broker=broker or self.broker_namespace)
+    
     async def reset_metrics(self) -> None:
         """Reset all pipeline metrics (useful for testing)"""
         try:

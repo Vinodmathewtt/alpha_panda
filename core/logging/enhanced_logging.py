@@ -200,7 +200,7 @@ class EnhancedLoggerManager:
         ]
         
         # Add JSON renderer for structured output
-        if self.settings.logging.json_format:
+        if self.settings.logging.console_json_format:
             processors.append(structlog.processors.JSONRenderer())
         else:
             processors.append(structlog.dev.ConsoleRenderer())

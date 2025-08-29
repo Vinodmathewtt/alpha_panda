@@ -24,7 +24,7 @@ class StandardResponse(BaseModel, Generic[T]):
     message: Optional[str] = Field(None, description="Response message")
     data: Optional[T] = Field(None, description="Response data")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    broker: Optional[str] = Field(None, description="Broker namespace")
+    broker: Optional[str] = Field(None, description="Active broker context")
 
 class PaginatedResponse(BaseModel, Generic[T]):
     """Paginated response wrapper"""
@@ -55,7 +55,7 @@ class ComponentHealth(BaseModel):
 class SystemHealthResponse(BaseModel):
     status: HealthStatus
     timestamp: datetime
-    broker_namespace: str
+    active_brokers: List[str]
     checks: Dict[str, ComponentHealth]
     summary: Dict[str, int]
 

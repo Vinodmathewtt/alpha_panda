@@ -1,4 +1,5 @@
 # Strategy Runner Service - Main orchestrator service
+import asyncio
 from typing import Dict, Any, List
 from collections import defaultdict
 from sqlalchemy import select
@@ -10,6 +11,7 @@ from core.database.connection import DatabaseManager
 from core.database.models import StrategyConfiguration
 from core.logging import get_trading_logger_safe, get_performance_logger_safe, get_error_logger_safe
 from core.market_hours.market_hours_checker import MarketHoursChecker
+from core.monitoring.pipeline_metrics import PipelineMetricsCollector
 from .factory import StrategyFactory
 from .runner import StrategyRunner
 
@@ -23,6 +25,13 @@ class StrategyRunnerService:
         self.logger = get_trading_logger_safe("strategy_runner")
         self.perf_logger = get_performance_logger_safe("strategy_runner_performance")
         self.error_logger = get_error_logger_safe("strategy_runner_errors")
+        
+        # Initialize pipeline metrics collector for observability
+        self.metrics_collector = PipelineMetricsCollector(
+            redis_client=redis_client,
+            settings=settings,
+            broker_namespace="strategy_runner"
+        ) if redis_client else None
         
         # Market hours checker for market status awareness - use injected or create new
         self.market_hours_checker = market_hours_checker or MarketHoursChecker()
@@ -185,11 +194,28 @@ class StrategyRunnerService:
                 
                 if signals:
                     # Generate signals for each configured broker that this strategy should run on
+                    # Use asyncio.gather for concurrent signal emission to improve throughput
+                    emission_tasks = []
                     for broker in runner.strategy.brokers:
                         if broker in self.active_brokers:
-                            # Emit each signal to the appropriate broker topic
+                            # Create emit tasks for each signal to this broker
                             for signal in signals:
-                                await self._emit_signal(signal, broker, strategy_id)
+                                emission_tasks.append(
+                                    self._emit_signal(signal, broker, strategy_id)
+                                )
+                    
+                    # Execute all emission tasks concurrently
+                    if emission_tasks:
+                        results = await asyncio.gather(*emission_tasks, return_exceptions=True)
+                        
+                        # Log any failures that occurred during emission
+                        for i, result in enumerate(results):
+                            if isinstance(result, Exception):
+                                self.error_logger.error("Signal emission failed",
+                                                      strategy_id=strategy_id,
+                                                      task_index=i,
+                                                      error=str(result),
+                                                      exc_info=result)
                                 
             except Exception as e:
                 self.error_logger.error("Error executing strategy",
@@ -228,6 +254,22 @@ class StrategyRunnerService:
                 data=signal.dict(),
                 event_type=EventType.TRADING_SIGNAL
             )
+            
+            # Record pipeline metrics for observability
+            if self.metrics_collector:
+                try:
+                    # Increment signals generated count per broker
+                    await self.metrics_collector.increment_count("signals", broker)
+                    await self.metrics_collector.set_last_activity_timestamp("signals", broker)
+                    
+                    # Track strategy-specific metrics
+                    await self.metrics_collector.increment_count(
+                        f"strategies.{strategy_id}.signals", broker
+                    )
+                except Exception as metrics_error:
+                    # Don't fail signal emission due to metrics errors
+                    self.logger.warning("Failed to record metrics", 
+                                       error=str(metrics_error))
             
             self.logger.info("Signal generated", 
                             broker=broker,

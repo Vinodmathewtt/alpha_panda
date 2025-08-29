@@ -37,6 +37,7 @@ class EventType(str, Enum):
     ORDER_FILLED = "order_filled"
     ORDER_FAILED = "order_failed"
     PNL_SNAPSHOT = "pnl_snapshot"
+    SYSTEM_ERROR = "system_error"
 
 
 class EventEnvelope(AlphaPandaBaseModel):
@@ -157,6 +158,7 @@ class TradingSignal(AlphaPandaBaseModel):
     quantity: int
     price: Optional[Decimal] = None
     timestamp: datetime
+    confidence: Optional[float] = None  # Strategy confidence score (0.0 to 1.0)
     metadata: Optional[Dict[str, Any]] = None
 
 

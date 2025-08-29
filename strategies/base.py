@@ -3,29 +3,9 @@ from abc import ABC, abstractmethod
 from typing import Generator, Optional, Dict, Any, List
 from datetime import datetime
 from decimal import Decimal
-from pydantic import BaseModel
-from core.schemas.events import SignalType
 
-
-class MarketData(BaseModel):
-    """Market data input for strategies"""
-    instrument_token: int
-    last_price: Decimal
-    volume: int
-    timestamp: datetime
-    ohlc: Optional[Dict[str, Decimal]] = None
-
-
-class TradingSignal(BaseModel):
-    """Trading signal output from strategies"""
-    strategy_id: str
-    instrument_token: int
-    signal_type: SignalType
-    quantity: int
-    price: Optional[Decimal] = None
-    timestamp: datetime
-    confidence: Optional[float] = None
-    metadata: Optional[Dict[str, Any]] = None
+# Import standardized schemas to eliminate duplication
+from core.schemas.events import SignalType, TradingSignal, MarketTick as MarketData
 
 
 class BaseStrategy(ABC):

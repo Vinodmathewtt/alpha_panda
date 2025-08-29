@@ -1,5 +1,5 @@
 # Complete tick formatting utilities for PyKiteConnect data capture
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from decimal import Decimal
 import decimal
@@ -70,34 +70,47 @@ class TickFormatter:
         return formatted_tick
     
     def _format_timestamp(self, raw_tick: Dict[str, Any]) -> datetime:
-        """Format timestamp with proper fallback hierarchy"""
+        """Format timestamp with UTC normalization and proper fallback hierarchy"""
         # Priority: exchange_timestamp > last_trade_time > current time
         timestamp = raw_tick.get("exchange_timestamp") or raw_tick.get("last_trade_time")
         
         if timestamp is None:
-            # Fallback to current time if no timestamp available
-            return datetime.now()
+            # Always return timezone-aware UTC datetime
+            return datetime.now(timezone.utc)
         
-        return self._format_datetime(timestamp)
+        return self._normalize_to_utc(timestamp)
     
+    def _normalize_to_utc(self, dt_value: Any) -> datetime:
+        """Normalize any datetime value to UTC."""
+        if dt_value is None:
+            return datetime.now(timezone.utc)
+        
+        if isinstance(dt_value, datetime):
+            # If naive, assume UTC
+            if dt_value.tzinfo is None:
+                return dt_value.replace(tzinfo=timezone.utc)
+            # If timezone-aware, convert to UTC
+            return dt_value.astimezone(timezone.utc)
+        
+        elif isinstance(dt_value, str):
+            try:
+                parsed = datetime.fromisoformat(dt_value)
+                return self._normalize_to_utc(parsed)
+            except ValueError:
+                try:
+                    parsed = datetime.strptime(dt_value, "%Y-%m-%d %H:%M:%S")
+                    return parsed.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    return datetime.now(timezone.utc)
+        
+        return datetime.now(timezone.utc)
+
     def _format_datetime(self, dt_value: Any) -> Optional[datetime]:
-        """Format datetime from various input formats"""
+        """Format datetime from various input formats with UTC normalization"""
         if dt_value is None:
             return None
         
-        if isinstance(dt_value, datetime):
-            return dt_value
-        elif isinstance(dt_value, str):
-            try:
-                return datetime.fromisoformat(dt_value)
-            except ValueError:
-                # Try common date formats
-                try:
-                    return datetime.strptime(dt_value, "%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    return datetime.now()
-        
-        return datetime.now()
+        return self._normalize_to_utc(dt_value)
     
     def _format_ohlc(self, ohlc: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Format OHLC data into structured format"""

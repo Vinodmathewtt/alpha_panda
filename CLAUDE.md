@@ -576,3 +576,23 @@ NEVER proactively create documentation files (*.md) or README files. Only create
 5. **Maintain Test Integrity**: Tests must validate real-world usage patterns and expose actual implementation needs
 
 **Example**: If tests fail because `MarketFeedService.__init__()` is missing an `auth_service` parameter, this indicates the service implementation is incomplete - implement the missing parameter rather than removing it from tests.
+
+### Mandatory Implementation Verification Rule (2025-08-28 Update)
+
+**🚨 MANDATORY VERIFICATION PRINCIPLE**: Every new implementation and change MUST be followed by comprehensive verification:
+
+1. **Run Tests After Every Implementation**: Immediately after implementing any feature or fix, run the full test suite to verify nothing is broken
+2. **Validate Integration Points**: Check that all service integrations, API endpoints, and dependencies work correctly
+3. **Verify Configuration Changes**: Ensure any configuration updates (settings, environment variables) are properly loaded and used
+4. **Check Import Dependencies**: Verify that all imports and dependencies are available and working
+5. **Test Critical Paths**: Run specific tests for the implemented functionality to ensure it works as intended
+6. **Document Test Results**: Record test outcomes and any issues discovered during verification
+
+**Implementation Workflow**:
+1. Implement the feature/fix
+2. Run `python -m pytest tests/unit/` to verify unit tests pass
+3. Test critical imports and basic functionality with simple Python scripts
+4. Run integration tests if changes affect service interactions
+5. Document any test failures and fix them before considering implementation complete
+
+**This rule ensures that implementations are verified working before moving to the next task, preventing accumulation of broken code.**

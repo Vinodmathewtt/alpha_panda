@@ -2,8 +2,8 @@
 from typing import Generator, List
 from decimal import Decimal
 from statistics import mean, stdev
-from .base import BaseStrategy, MarketData, TradingSignal
-from core.schemas.events import SignalType
+from .base import BaseStrategy, MarketData
+from core.schemas.events import SignalType, TradingSignal
 
 
 class MeanReversionStrategy(BaseStrategy):

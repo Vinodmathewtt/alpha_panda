@@ -367,7 +367,7 @@ class TestStrategyRunnerServiceIntegration:
             market_data = MarketData(
                 instrument_token=256265,
                 last_price=Decimal("21500.00"),
-                volume=1000,
+                volume_traded=1000,
                 timestamp=datetime.now(timezone.utc)
             )
             
