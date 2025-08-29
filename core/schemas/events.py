@@ -78,6 +78,7 @@ class EventEnvelope(AlphaPandaBaseModel):
 class SignalType(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
+    HOLD = "HOLD"
 
 
 class ExecutionMode(str, Enum):
@@ -219,6 +220,7 @@ class OrderFailed(AlphaPandaBaseModel):
     execution_mode: ExecutionMode
     error_message: str
     timestamp: datetime
+    broker: str  # CRITICAL FIX: Add required broker field
 
 
 class Position(AlphaPandaBaseModel):

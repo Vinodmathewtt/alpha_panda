@@ -13,11 +13,11 @@ from core.logging import get_trading_logger_safe, get_performance_logger_safe, g
 from core.market_hours.market_hours_checker import MarketHoursChecker
 from core.monitoring.pipeline_metrics import PipelineMetricsCollector
 from .factory import StrategyFactory
-from .runner import StrategyRunner
+# Legacy runner import removed - composition-only architecture
 
 
 class StrategyRunnerService:
-    """Main orchestrator service for running trading strategies"""
+    """Modern composition-based strategy runner service - NO LEGACY SUPPORT"""
     
     def __init__(self, config: RedpandaSettings, settings: Settings, db_manager: DatabaseManager, redis_client=None, market_hours_checker: MarketHoursChecker = None):
         self.settings = settings
@@ -42,7 +42,9 @@ class StrategyRunnerService:
         self.last_signal_time = None
         # Store active brokers for signal generation
         self.active_brokers = settings.active_brokers
-        self.strategy_runners: Dict[str, StrategyRunner] = {}
+        
+        # ✅ COMPOSITION-ONLY ARCHITECTURE - NO LEGACY SUPPORT
+        self.strategy_executors: Dict[str, Any] = {}  # Composition strategies ONLY
         self.strategy_instruments: Dict[str, List[int]] = {}  # strategy_id -> instrument_tokens
         
         # NEW: Reverse mapping for efficient tick routing (O(1) vs O(n))
@@ -75,8 +77,9 @@ class StrategyRunnerService:
         # Load strategies from database
         await self._load_strategies()
         
-        self.logger.info(f"🏭 Strategy runner started with active brokers: {self.settings.active_brokers}",
-                        strategies_loaded=len(self.strategy_runners))
+        self.logger.info(f"🏭 Composition strategy runner started with active brokers: {self.settings.active_brokers}",
+                        composition_strategies=len(self.strategy_executors),
+                        architecture="composition_only")
         
     async def _load_strategies(self):
         """Load active strategies from database, fallback to YAML if empty"""
@@ -93,32 +96,25 @@ class StrategyRunnerService:
             
             for config in strategy_configs:
                 try:
-                    # Create strategy instance with broker awareness
-                    strategy = StrategyFactory.create_strategy(
+                    # ✅ COMPOSITION-ONLY ARCHITECTURE - ALL STRATEGIES USE COMPOSITION
+                    strategy_executor = StrategyFactory.create_strategy(
                         strategy_id=config.id,
                         strategy_type=config.strategy_type,
                         parameters=config.parameters,
                         brokers=["paper", "zerodha"] if config.zerodha_trading_enabled else ["paper"],
                         instrument_tokens=config.instruments
                     )
-                    
-                    # Create runner for this strategy
-                    runner = StrategyRunner(strategy)
-                    self.strategy_runners[config.id] = runner
-                    
-                    # Store instrument mapping for filtering
+                    self.strategy_executors[config.id] = strategy_executor
                     self.strategy_instruments[config.id] = config.instruments
                     
-                    # NEW: Populate reverse mapping for efficient lookups
-                    for token in config.instruments:
-                        self.instrument_to_strategies[token].append(config.id)
+                    # Update instrument mapping for O(1) tick routing
+                    for instrument_token in config.instruments:
+                        self.instrument_to_strategies[instrument_token].append(config.id)
                     
-                    self.logger.info(
-                        "Loaded strategy",
-                        strategy_id=config.id,
-                        strategy_type=config.strategy_type,
-                        instruments=config.instruments
-                    )
+                    strategies_loaded += 1
+                    self.logger.info(f"Loaded composition strategy: {config.id}", 
+                                   strategy_type=config.strategy_type,
+                                   architecture="composition")
                     
                 except Exception as e:
                     self.logger.error(
@@ -127,34 +123,9 @@ class StrategyRunnerService:
                         error=str(e)
                     )
             
-            strategies_loaded = len(self.strategy_runners)
+            strategies_loaded = len(self.strategy_executors)
         
-        # Fallback to YAML configuration if no database strategies loaded
-        if strategies_loaded == 0:
-            self.logger.info("No strategies found in database, loading from YAML configurations")
-            try:
-                yaml_strategies = StrategyFactory.create_strategies_from_yaml()
-                for strategy in yaml_strategies:
-                    runner = StrategyRunner(strategy)
-                    self.strategy_runners[strategy.strategy_id] = runner
-                    
-                    # Store instrument mapping for filtering
-                    self.strategy_instruments[strategy.strategy_id] = strategy.instrument_tokens
-                    
-                    # NEW: Populate reverse mapping for efficient lookups
-                    for token in strategy.instrument_tokens:
-                        self.instrument_to_strategies[token].append(strategy.strategy_id)
-                    
-                    self.logger.info(
-                        "Loaded strategy from YAML",
-                        strategy_id=strategy.strategy_id,
-                        brokers=strategy.brokers,
-                        instruments=strategy.instrument_tokens
-                    )
-                    strategies_loaded += 1
-                    
-            except Exception as e:
-                self.logger.error("Failed to load strategies from YAML", error=str(e))
+        # Only use database strategies - no YAML fallback in composition architecture
         
         self.logger.info(f"Total strategies loaded: {strategies_loaded}")
     
@@ -183,45 +154,67 @@ class StrategyRunnerService:
         if not interested_strategy_ids:
             return  # No strategies interested in this instrument
         
-        # Process tick through each interested strategy
+        # Process tick through each interested strategy using composition architecture only
         for strategy_id in interested_strategy_ids:
-            runner = self.strategy_runners.get(strategy_id)
-            if not runner:
-                continue
-            try:
-                # FIXED: Call process_market_data without producer_callback, get returned signals
-                signals = await runner.process_market_data(tick_data)
-                
-                if signals:
-                    # Generate signals for each configured broker that this strategy should run on
-                    # Use asyncio.gather for concurrent signal emission to improve throughput
-                    emission_tasks = []
-                    for broker in runner.strategy.brokers:
-                        if broker in self.active_brokers:
-                            # Create emit tasks for each signal to this broker
-                            for signal in signals:
-                                emission_tasks.append(
-                                    self._emit_signal(signal, broker, strategy_id)
-                                )
+            executor = self.strategy_executors.get(strategy_id)
+            if executor:
+                try:
+                    # COMPOSITION: Process using StrategyExecutor
+                    from core.schemas.events import MarketTick
                     
-                    # Execute all emission tasks concurrently
-                    if emission_tasks:
-                        results = await asyncio.gather(*emission_tasks, return_exceptions=True)
+                    # Convert tick_data to MarketTick format
+                    market_tick = MarketTick(
+                        instrument_token=tick_data["instrument_token"],
+                        last_price=tick_data["last_price"],
+                        timestamp=tick_data["timestamp"],
+                        symbol=tick_data.get("symbol", "")
+                    )
+                    
+                    signal_result = executor.process_tick(market_tick)
+                    
+                    if signal_result:
+                        # Convert signal result to TradingSignal format
+                        from core.schemas.events import TradingSignal, SignalType
                         
-                        # Log any failures that occurred during emission
-                        for i, result in enumerate(results):
-                            if isinstance(result, Exception):
-                                self.error_logger.error("Signal emission failed",
-                                                      strategy_id=strategy_id,
-                                                      task_index=i,
-                                                      error=str(result),
-                                                      exc_info=result)
-                                
-            except Exception as e:
-                self.error_logger.error("Error executing strategy",
-                                      strategy_id=strategy_id,
-                                      instrument_token=instrument_token,
-                                      error=str(e))
+                        signal_type_map = {
+                            "BUY": SignalType.BUY,
+                            "SELL": SignalType.SELL,
+                            "HOLD": SignalType.HOLD
+                        }
+                        
+                        signal_type = signal_type_map.get(signal_result.signal_type)
+                        
+                        # Skip HOLD signals - no action needed
+                        if not signal_type or signal_type == SignalType.HOLD:
+                            continue
+                        
+                        trading_signal = TradingSignal(
+                            strategy_id=strategy_id,
+                            instrument_token=tick_data["instrument_token"],
+                            signal_type=signal_type,
+                            quantity=signal_result.quantity,
+                            price=signal_result.price,
+                            timestamp=tick_data["timestamp"],
+                            confidence=signal_result.confidence,
+                            metadata=signal_result.metadata or {}
+                        )
+                        
+                        # Generate signals for each configured broker
+                        emission_tasks = []
+                        for broker in executor.config.active_brokers:
+                            if broker in self.active_brokers:
+                                emission_tasks.append(
+                                    self._emit_signal(trading_signal, broker, strategy_id)
+                                )
+                        
+                        # Execute all emission tasks concurrently
+                        if emission_tasks:
+                            await asyncio.gather(*emission_tasks)
+                            self.signals_generated += len(emission_tasks)
+                            
+                except Exception as e:
+                    self.error_logger.error(f"Error processing composition strategy {strategy_id}: {e}")
+                continue
     
     
     async def _emit_signal(self, signal, broker: str, strategy_id: str):
@@ -252,15 +245,17 @@ class StrategyRunnerService:
                 topic=topic,
                 key=key,
                 data=signal.dict(),
-                event_type=EventType.TRADING_SIGNAL
+                event_type=EventType.TRADING_SIGNAL,
+                broker=broker  # CRITICAL FIX: Add required broker parameter
             )
             
             # Record pipeline metrics for observability
             if self.metrics_collector:
                 try:
-                    # Increment signals generated count per broker
-                    await self.metrics_collector.increment_count("signals", broker)
-                    await self.metrics_collector.set_last_activity_timestamp("signals", broker)
+                    # Use proper signal recording method for consistency
+                    signal_data = signal.dict()
+                    signal_data.update({"strategy_id": strategy_id, "id": f"{strategy_id}_{signal.instrument_token}"})
+                    await self.metrics_collector.record_signal_generated(signal_data)
                     
                     # Track strategy-specific metrics
                     await self.metrics_collector.increment_count(

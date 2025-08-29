@@ -27,6 +27,8 @@ Alpha Panda is an algorithmic trading system built on Unified Log architecture u
 
 **⚠️ DOCUMENTATION UPDATE STATUS**: The architecture has been successfully migrated from environment-specific deployments (`BROKER_NAMESPACE`) to unified multi-broker deployments (`ACTIVE_BROKERS`). **Individual documentation files across the codebase may still reference the old architecture and need to be gradually updated** as development continues.
 
+**🏷️ NAMESPACE DISTINCTION**: Do not confuse `BROKER_NAMESPACE` env var (❌ removed) with `broker_namespace` parameter (✅ valid for metrics). See README.md namespace section for details.
+
 ## Service Architecture
 
 All services follow stream processing pattern with complete broker segregation. See [Services Documentation](services/) for detailed execution flow and patterns.
@@ -138,11 +140,18 @@ Services are in `services/` directory, each following the stream processing patt
 - **Dynamic Topic Subscription**: Services generate topic lists based on active brokers at startup
 
 ### Strategy Framework
-Pure strategies in `strategies/` directory:
-- Inherit from `BaseStrategy` 
-- Pure functions: receive `MarketTick`, return `TradingSignal`
-- No direct access to infrastructure (database, Kafka, etc.)
-- Strategy Runner service hosts and executes strategies
+Alpha Panda supports **dual strategy architectures** with orchestration in the services layer:
+
+**Strategy Library** (`strategies/` directory):
+- **Legacy**: Inheritance-based strategies (currently active in production)  
+- **Modern**: Composition-based framework with protocols (recommended for new strategies)
+- **Pure Logic**: No direct infrastructure access (database, Kafka, etc.)
+
+**Strategy Orchestration** (services layer):
+- **Entry Point**: `cli.py run` starts all services including strategy runner
+- **Main Orchestrator**: `services/strategy_runner/service.py` loads and executes strategies
+- **Factory Pattern**: `strategies/core/factory.py` creates strategy executors on demand
+- **Database Integration**: Strategies loaded from PostgreSQL with YAML fallback
 
 ## Project Structure
 
@@ -199,6 +208,7 @@ ACTIVE_BROKERS=paper python cli.py run
 - `core/schemas/events.py`: Standardized event contracts
 - `docker-compose.yml`: Development infrastructure
 - `Makefile`: Development automation
+- `docs/improvements/`: Long-term system improvement guidelines and monitoring enhancements
 
 ## Critical Development Rules
 
@@ -241,6 +251,24 @@ ACTIVE_BROKERS=paper python cli.py run
 
 ### CRITICAL FIX PREVENTION GUIDELINES (2025 Update)
 **🚨 MANDATORY**: These guidelines prevent critical integration breakages that can cause 500 errors and system failures.
+
+### Event Schema Validation Rules (MANDATORY - Updated 2025-08-29)
+**🚨 CRITICAL**: Prevent Pydantic validation errors at runtime by ensuring schema compliance at development time.
+
+1. **Always Include Required Fields**: All event models must be created with ALL required fields specified in their Pydantic schema
+   - `OrderFilled` MUST include: `broker`, `order_id`, `instrument_token`, `quantity`, `fill_price`, `timestamp`
+   - `OrderPlaced` MUST include: `broker`, `status`, `order_id`, `instrument_token`, `signal_type`, `quantity`, `price`, `timestamp`
+   - `OrderFailed` MUST include: `broker`, `strategy_id`, `instrument_token`, `signal_type`, `quantity`, `order_id`, `execution_mode`, `error_message`, `timestamp`
+
+2. **Broker Field Mandatory**: ALL order events must specify the broker field explicitly (`"paper"` or `"zerodha"`)
+
+3. **Schema Validation Testing**: Implement unit tests that validate event model creation for all traders and services
+
+4. **Interface Method Consistency**: Service method calls must match interface definitions
+   - Portfolio managers must implement both `handle_*` and `process_*` method families
+   - Service calls must use methods that exist in the interface
+
+5. **Message Producer Envelope Compliance**: ALL producer.send() calls must include `broker` parameter for proper event envelope generation
 
 #### API Dependencies and Imports
 1. **Always verify imports exist** - Before importing functions like `get_settings`, `get_redis_client`, ensure they exist in the target module
@@ -354,11 +382,13 @@ See implementation example: `examples/trading/trading_engine_routing.py`
 ### Architecture Patterns
 - **Domain isolation** - Domain must not import adapters; adapters depend on domain only
 - **Protocol-based contracts** - Use `typing.Protocol` for interfaces, enable duck typing
+- **ABC Reduction Policy** - Minimize abstract base classes; use protocols for contracts, only ABC for framework adapters
 - **Factory functions** - Module-level factories for object assembly, avoid global singletons
 - **Error handling** - Custom exceptions flat hierarchy, convert external errors at boundaries
 
 ### Development Rules
 - **No inheritance by default** - Only for framework adapters, stable hierarchies, tiny mixins (one level max)
+- **Protocol over ABC** - Use `typing.Protocol` for contracts; minimize abstract base classes to framework adapters only
 - **Pure domain logic** - Keep I/O at edges, core domain sync and pure where possible
 - **Explicit over implicit** - No metaclass magic, clear naming (nouns for classes, verbs for methods)
 
@@ -412,11 +442,24 @@ class MomentumProcessor:
         pass
 ```
 
-**MIGRATION STRATEGY**: 
-- Keep existing `BaseStrategy` for backward compatibility
-- Implement new composition-based framework alongside
-- Gradually migrate strategies to new pattern
-- Mark `BaseStrategy` as deprecated once migration complete
+**ABC REDUCTION MIGRATION STRATEGY**:
+
+**Phase 1: No New ABC Usage**
+- New interfaces should use `typing.Protocol`
+- Document ABC as legacy pattern
+- All new strategy implementations use composition + protocols
+
+**Phase 2: Protocol Migration**
+- Create Protocol alternatives for existing ABCs
+- Add compatibility bridges (e.g., `CompatibilityAdapter` for `BaseStrategy`)
+- Parallel development with both patterns supported
+
+**Phase 3: Legacy ABC Retirement**
+- Mark ABC classes as deprecated with migration timelines
+- Migrate remaining usage to Protocols
+- Remove deprecated ABCs after full transition
+
+**Current State**: Phase 2 implemented - composition framework with Protocol contracts available alongside legacy `BaseStrategy` ABC
 
 #### 2. Service Protocol Definitions (MEDIUM PRIORITY)
 **Current Issue**: Missing Protocol definitions for service contracts.
@@ -596,3 +639,23 @@ NEVER proactively create documentation files (*.md) or README files. Only create
 5. Document any test failures and fix them before considering implementation complete
 
 **This rule ensures that implementations are verified working before moving to the next task, preventing accumulation of broken code.**
+
+### Clean Architecture Migration Policy (2025-08-29 Update)
+
+**🚨 MANDATORY CLEAN MIGRATION PRINCIPLE**: Alpha Panda follows a strict clean architecture migration policy with NO backward compatibility:
+
+1. **No Compatibility Shims**: Never create compatibility adapters, bridges, or shim layers for legacy code
+2. **No Legacy Support**: When architectural changes are introduced, they are clean breaks from the old system
+3. **Direct Migration**: All existing code (including tests) must be updated to use the new architecture directly
+4. **Clean Codebase**: Remove all legacy code paths completely - no mixed architecture states
+5. **Test Migration**: If tests reference old architecture components, update the tests to use new components
+
+**Examples**:
+- ❌ Create `BaseStrategy` compatibility shim for legacy tests
+- ✅ Update tests to use `StrategyExecutor` and composition patterns directly
+- ❌ Keep both legacy and modern streaming clients
+- ✅ Migrate all services to `StreamServiceBuilder` and remove legacy clients
+- ❌ Support both inheritance and composition strategy patterns
+- ✅ Complete migration to composition-only strategy framework
+
+**This policy ensures clean, maintainable architecture without technical debt from compatibility layers.**
