@@ -34,10 +34,10 @@ async def seed_data():
         # Create test strategies
         momentum_strategy = StrategyConfiguration(
             id="momentum_test_1",
-            strategy_type="SimpleMomentumStrategy",
+            strategy_type="MomentumProcessor",
             instruments=[738561, 2714625],  # RELIANCE, HDFCBANK
             parameters={
-                "lookback_period": 20,
+                "lookback_periods": 20,
                 "momentum_threshold": 0.02,
                 "position_size": 100
             },
@@ -48,11 +48,11 @@ async def seed_data():
         
         mean_reversion_strategy = StrategyConfiguration(
             id="mean_reversion_test_1", 
-            strategy_type="MeanReversionStrategy",
+            strategy_type="MeanReversionProcessor",
             instruments=[177665, 60417],  # ICICIBANK, SBIN
             parameters={
-                "lookback_period": 20,
-                "std_dev_threshold": 2.0,
+                "lookback_periods": 20,
+                "std_deviation_threshold": 2.0,
                 "position_size": 50
             },
             is_active=True,
@@ -63,7 +63,7 @@ async def seed_data():
         # Add a live trading enabled strategy for demonstration
         live_momentum_strategy = StrategyConfiguration(
             id="momentum_live_demo",
-            strategy_type="SimpleMomentumStrategy", 
+            strategy_type="MomentumProcessor", 
             instruments=[81153],  # TCS only for demo
             parameters={
                 "lookback_period": 10,

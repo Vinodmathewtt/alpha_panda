@@ -94,7 +94,9 @@ class ZerodhaTrader(Trader):
                 price=signal.price,
                 order_id=order_id,
                 execution_mode=ExecutionMode.ZERODHA,
-                timestamp=signal.timestamp
+                timestamp=signal.timestamp,
+                broker="zerodha",  # CRITICAL FIX: Add required broker field
+                status="PLACED"    # CRITICAL FIX: Add required status field
             )
             return placed_event_data.model_dump(mode='json')
 
@@ -113,6 +115,7 @@ class ZerodhaTrader(Trader):
             order_id="N/A",
             execution_mode=ExecutionMode.ZERODHA,
             error_message=error_message,
-            timestamp=signal.timestamp
+            timestamp=signal.timestamp,
+            broker="zerodha"  # CRITICAL FIX: Add required broker field
         )
         return failed_event_data.model_dump(mode='json')

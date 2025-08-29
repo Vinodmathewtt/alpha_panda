@@ -5,6 +5,7 @@ from core.schemas.topics import TopicMap
 from core.schemas.events import EventType, TradingSignal
 from core.logging import get_trading_logger_safe, get_performance_logger_safe, get_error_logger_safe
 from core.market_hours.market_hours_checker import MarketHoursChecker
+from core.monitoring.pipeline_metrics import PipelineMetricsCollector  # CRITICAL FIX: Add metrics integration
 from datetime import datetime, timezone
 # Removed: from collections import defaultdict (no longer needed)
 
@@ -28,6 +29,9 @@ class TradingEngineService:
         self.trader_factory = trader_factory
         self.execution_router = execution_router
         self.market_hours_checker = market_hours_checker
+        
+        # CRITICAL FIX: Add metrics collection integration
+        self.metrics_collector = PipelineMetricsCollector(redis_client, settings, None)  # Multi-broker
         
         # Simplified state management - no warm-up needed
         # Removed: last_prices, pending_signals, warmed_up_instruments
@@ -182,7 +186,16 @@ class TradingEngineService:
                 key=key,
                 data=result_data,
                 event_type=event_type,
+                broker=broker  # CRITICAL FIX: Add required broker parameter
             )
+            
+            # CRITICAL FIX: Record metrics for pipeline monitoring
+            if self.metrics_collector:
+                try:
+                    await self.metrics_collector.record_order_processed(result_data)
+                    await self.metrics_collector.set_last_activity_timestamp("orders", broker)
+                except Exception as e:
+                    self.logger.warning(f"Failed to record order metrics: {e}", broker=broker)
             
             self.logger.info("Execution result emitted", 
                             broker=broker, 

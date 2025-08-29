@@ -5,6 +5,7 @@ from core.schemas.events import EventType, ExecutionMode
 from core.config.settings import Settings, RedpandaSettings
 from core.database.connection import DatabaseManager
 from core.logging import get_trading_logger_safe, get_error_logger_safe
+from core.monitoring.pipeline_metrics import PipelineMetricsCollector  # CRITICAL FIX: Add metrics integration
 from .managers.manager_factory import PortfolioManagerFactory
 from .managers.paper_manager import PaperPortfolioManager
 from .managers.zerodha_manager import ZerodhaPortfolioManager
@@ -16,6 +17,9 @@ class PortfolioManagerService:
     def __init__(self, config: RedpandaSettings, settings: Settings, 
                  redis_client, db_manager: DatabaseManager):
         self.settings = settings
+        
+        # CRITICAL FIX: Add metrics collection integration
+        self.metrics_collector = PipelineMetricsCollector(redis_client, settings, None)  # Multi-broker
         
         # --- ENHANCED: Multi-broker order topic subscription ---
         order_topics = []
@@ -106,6 +110,16 @@ class PortfolioManagerService:
         
         # Emit PnL snapshot to broker-specific topic
         await self._emit_pnl_snapshot(broker, manager.get_current_portfolio())
+        
+        # CRITICAL FIX: Record metrics for pipeline monitoring
+        if self.metrics_collector:
+            try:
+                portfolio_id = f"{broker}_portfolio"
+                portfolio_data = manager.get_current_portfolio()
+                await self.metrics_collector.record_portfolio_update(portfolio_id, portfolio_data)
+                await self.metrics_collector.set_last_activity_timestamp("portfolio", broker)
+            except Exception as e:
+                self.logger.warning(f"Failed to record portfolio metrics: {e}", broker=broker)
     
     async def _emit_pnl_snapshot(self, broker: str, portfolio_data: Dict[str, Any]):
         """Emit PnL snapshot to broker-specific topic."""
@@ -119,7 +133,8 @@ class PortfolioManagerService:
                 topic=topic,
                 key=f"portfolio_snapshot_{broker}",
                 data=portfolio_data,
-                event_type=EventType.PNL_SNAPSHOT
+                event_type=EventType.PNL_SNAPSHOT,
+                broker=broker  # CRITICAL FIX: Add required broker parameter
             )
         except Exception as e:
             self.logger.error(f"Failed to get producer for PnL emission: {e}")

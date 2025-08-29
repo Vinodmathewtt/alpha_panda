@@ -10,6 +10,7 @@ import uuid
 
 from core.logging import get_monitoring_logger_safe
 from core.market_hours.market_hours_checker import MarketHoursChecker
+from .metrics_registry import MetricsRegistry
 
 
 class PipelineValidator:
@@ -117,7 +118,7 @@ class PipelineValidator:
         """Validate market data ingestion and distribution (shared across brokers)"""
         try:
             # Check for recent market ticks - FIXED: Use pipeline metrics format with shared "market" namespace
-            last_tick_key = "pipeline:market_ticks:market:last"
+            last_tick_key = MetricsRegistry.market_ticks_last()
             last_tick_time_str = await self.redis.get(last_tick_key)
             
             if not last_tick_time_str:
@@ -159,9 +160,9 @@ class PipelineValidator:
     async def _validate_signal_generation(self) -> Dict[str, Any]:
         """Validate signal generation for this specific broker"""
         try:
-            # Check broker-specific signal generation metrics
-            signals_key = f"alpha_panda:metrics:{self.broker}:signals:last_generated"
-            signal_count_key = f"alpha_panda:metrics:{self.broker}:signals:count_last_5min"
+            # Check broker-specific signal generation metrics - FIXED: Use pipeline: prefix to match PipelineMetricsCollector
+            signals_key = MetricsRegistry.signals_last(self.broker)
+            signal_count_key = MetricsRegistry.signals_count(self.broker)
             
             last_signal_time_str = await self.redis.get(signals_key)
             signal_count_str = await self.redis.get(signal_count_key)
@@ -169,7 +170,7 @@ class PipelineValidator:
             result = {
                 "healthy": True,
                 "broker": self.broker,
-                "last_signal_time": last_signal_time_str.decode() if last_signal_time_str else None,
+                "last_signal_time": None,  # Will be set later if data exists
                 "signals_last_5min": int(signal_count_str) if signal_count_str else 0
             }
             
@@ -180,9 +181,12 @@ class PipelineValidator:
                     result["issue"] = f"No signals generated for {self.broker} during market hours"
                     result["recommendation"] = f"Check strategy runner and {self.broker} broker configuration"
                 else:
-                    # Check signal latency
-                    last_signal_time = datetime.fromisoformat(last_signal_time_str.decode())
+                    # Check signal latency - FIXED: Handle JSON format from PipelineMetricsCollector
+                    import json
+                    last_signal_data = json.loads(last_signal_time_str.decode())
+                    last_signal_time = datetime.fromisoformat(last_signal_data["timestamp"])
                     signal_latency = (datetime.utcnow() - last_signal_time).total_seconds()
+                    result["last_signal_time"] = last_signal_time.isoformat()
                     
                     if signal_latency > self.thresholds["signal_processing_latency"]:
                         result["healthy"] = False
@@ -203,9 +207,9 @@ class PipelineValidator:
     async def _validate_risk_management(self) -> Dict[str, Any]:
         """Validate risk management for this specific broker"""
         try:
-            # Check broker-specific risk validation metrics
-            risk_key = f"alpha_panda:metrics:{self.broker}:risk:last_validation"
-            risk_count_key = f"alpha_panda:metrics:{self.broker}:risk:validations_last_5min"
+            # Check broker-specific risk validation metrics - FIXED: Use pipeline: prefix to match PipelineMetricsCollector
+            risk_key = MetricsRegistry.signals_validated_last(self.broker)
+            risk_count_key = MetricsRegistry.signals_validated_count(self.broker)
             
             last_risk_time_str = await self.redis.get(risk_key)
             risk_count_str = await self.redis.get(risk_count_key)
@@ -241,9 +245,9 @@ class PipelineValidator:
     async def _validate_order_execution(self) -> Dict[str, Any]:
         """Validate order execution for this specific broker"""
         try:
-            # Check broker-specific order execution metrics
-            execution_key = f"alpha_panda:metrics:{self.broker}:orders:last_execution"
-            execution_count_key = f"alpha_panda:metrics:{self.broker}:orders:count_last_5min"
+            # Check broker-specific order execution metrics - FIXED: Use pipeline: prefix to match PipelineMetricsCollector
+            execution_key = MetricsRegistry.orders_last(self.broker)
+            execution_count_key = MetricsRegistry.orders_count(self.broker)
             
             last_execution_time_str = await self.redis.get(execution_key)
             execution_count_str = await self.redis.get(execution_count_key)
@@ -279,9 +283,9 @@ class PipelineValidator:
     async def _validate_portfolio_updates(self) -> Dict[str, Any]:
         """Validate portfolio updates for this specific broker"""
         try:
-            # Check broker-specific portfolio update metrics
-            portfolio_key = f"alpha_panda:metrics:{self.broker}:portfolio:last_update"
-            portfolio_count_key = f"alpha_panda:metrics:{self.broker}:portfolio:updates_last_5min"
+            # Check broker-specific portfolio update metrics - FIXED: Use pipeline: prefix to match PipelineMetricsCollector
+            portfolio_key = MetricsRegistry.portfolio_updates_last(self.broker)
+            portfolio_count_key = MetricsRegistry.portfolio_updates_count(self.broker)
             
             last_update_time_str = await self.redis.get(portfolio_key)
             update_count_str = await self.redis.get(portfolio_count_key)

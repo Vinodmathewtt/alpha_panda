@@ -186,3 +186,37 @@ class PaperPortfolioManager(BasePortfolioManager):
         # Implementation depends on cache design
         # For now, portfolios will be loaded on-demand
         pass
+    
+    # CRITICAL FIX: Add missing process_* methods for service compatibility
+    async def process_fill(self, fill_data: Dict[str, Any]) -> None:
+        """Process an order fill event (delegated to handle_fill)."""
+        await self.handle_fill(fill_data)
+    
+    async def process_failure(self, failure_data: Dict[str, Any]) -> None:
+        """Process an order failure event."""
+        strategy_id = failure_data.get('strategy_id')
+        error_message = failure_data.get('error_message', 'Unknown error')
+        self.logger.warning("Order failure processed", 
+                          strategy_id=strategy_id, 
+                          error=error_message)
+    
+    async def process_submission(self, submission_data: Dict[str, Any]) -> None:
+        """Process an order submission event."""
+        strategy_id = submission_data.get('strategy_id')
+        order_id = submission_data.get('order_id')
+        self.logger.info("Order submission processed", 
+                        strategy_id=strategy_id, 
+                        order_id=order_id)
+    
+    def get_current_portfolio(self) -> Dict[str, Any]:
+        """Get current portfolio state for PnL snapshots."""
+        # Aggregate all portfolio data
+        aggregated_data = {
+            "total_portfolios": len(self.portfolios),
+            "portfolios": {}
+        }
+        
+        for portfolio_id, portfolio in self.portfolios.items():
+            aggregated_data["portfolios"][portfolio_id] = portfolio.model_dump()
+        
+        return aggregated_data

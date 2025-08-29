@@ -1,14 +1,35 @@
-# Mean Reversion Strategy Configuration
-strategy_name: 'MeanReversion_NIFTY_1'
-strategy_class: 'MeanReversionStrategy'
-module_name: 'strategies.mean_reversion'
-instrument_tokens: [256265, 260105, 738561, 408065, 81153, 1270529, 492033, 2815745, 4267265, 177665, 3861249, 225537, 1346049, 2939649, 140033, 3050241, 1195009, 857857, 424961, 2714625]  # All instruments from instruments.csv
+brokers:
+- paper
+enabled: true
+instrument_tokens:
+- 256265
+- 260105
+- 738561
+- 408065
+- 81153
+- 1270529
+- 492033
+- 2815745
+- 4267265
+- 177665
+- 3861249
+- 225537
+- 1346049
+- 2939649
+- 140033
+- 3050241
+- 1195009
+- 857857
+- 424961
+- 2714625
+module_name: strategies.mean_reversion
 parameters:
-  window_size: 20
-  entry_threshold: 2.0  # Standard deviations
   exit_threshold: 0.5
-  max_position_size: 50
+  lookback_periods: 20
   max_drawdown_percent: 0.15
   max_history: 100
-brokers: ['paper']  # Paper trading only initially
-enabled: true
+  max_position_size: 50
+  std_deviation_threshold: 2.0
+strategy_class: MeanReversionProcessor
+strategy_name: MeanReversion_NIFTY_1
+use_composition: true

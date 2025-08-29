@@ -34,3 +34,23 @@ class BasePortfolioManager(ABC):
     async def reconcile_portfolio(self, portfolio_id: str) -> Dict[str, Any]:
         """Reconcile portfolio state with external sources."""
         pass
+    
+    @abstractmethod
+    async def process_fill(self, fill_data: Dict[str, Any]) -> None:
+        """Process an order fill event (alias for handle_fill for backward compatibility)."""
+        pass
+    
+    @abstractmethod
+    async def process_failure(self, failure_data: Dict[str, Any]) -> None:
+        """Process an order failure event."""
+        pass
+    
+    @abstractmethod
+    async def process_submission(self, submission_data: Dict[str, Any]) -> None:
+        """Process an order submission event."""
+        pass
+    
+    @abstractmethod
+    def get_current_portfolio(self) -> Dict[str, Any]:
+        """Get current portfolio state for PnL snapshots."""
+        pass

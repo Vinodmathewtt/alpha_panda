@@ -41,13 +41,16 @@ class StrategyConfiguration(Base):
     __tablename__ = "strategy_configurations"
 
     id = Column(String, primary_key=True, index=True)  # e.g., "Momentum_NIFTY_1"
-    strategy_type = Column(String, nullable=False)     # e.g., "SimpleMomentumStrategy"
+    strategy_type = Column(String, nullable=False)     # e.g., "MomentumProcessor"
     instruments = Column(JSON, nullable=False)         # e.g., [738561, 2714625]
     parameters = Column(JSON, nullable=False)          # e.g., {"lookback_period": 20}
     is_active = Column(Boolean, default=True, nullable=False)
     
     # CRITICAL: Fixed from live_trading_enabled
     zerodha_trading_enabled = Column(Boolean, default=False, nullable=False)  # Enable zerodha trading
+    
+    # Migration support: Use composition architecture flag
+    use_composition = Column(Boolean, default=True, nullable=False)  # NEW: Default to composition
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

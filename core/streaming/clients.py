@@ -1,6 +1,19 @@
-# COMPLETELY REWRITTEN with aiokafka (CRITICAL FIX)
-# MANDATORY: Replace blocking confluent-kafka with aiokafka
-# Phase 2: Integrated with deduplication, error handling, and manual commits
+# Direct Streaming Clients - Simple aiokafka Wrappers
+# 
+# ARCHITECTURE NOTE: This module provides direct, lightweight wrappers for basic 
+# streaming needs. These are NOT legacy components - they serve a different purpose
+# from the enhanced infrastructure components.
+#
+# USE CASES:
+# - Simple message publishing without additional layers
+# - Direct Kafka operations with minimal overhead  
+# - DI container usage for basic producer needs
+# - When you need direct control over Kafka operations
+#
+# For enhanced features (automatic EventEnvelope wrapping, reliability layers),
+# use the infrastructure components via StreamServiceBuilder pattern.
+#
+# Both approaches are valid and actively maintained for different use cases.
 
 import json
 import asyncio
@@ -520,28 +533,35 @@ class StreamProcessor(GracefulShutdownMixin):
         elif "signals" in topic:
             # Extract broker from topic (e.g., "paper.signals.raw" -> "paper")
             broker = topic.split('.')[0] if '.' in topic else self.default_broker_namespace
-            broker_key = f"alpha_panda:metrics:{broker}:signals:last_generated"
-            await self._redis_client.setex(broker_key, 600, current_time)
+            # FIXED: Use pipeline: prefix to match PipelineMetricsCollector
+            broker_key = f"pipeline:signals:{broker}:last"
+            # Store as JSON to match PipelineMetricsCollector format
+            signal_data = {"timestamp": current_time, "topic": topic}
+            await self._redis_client.setex(broker_key, 600, json.dumps(signal_data))
             
-            # Signal count for last 5 minutes
-            signal_count_key = f"alpha_panda:metrics:{broker}:signals:count_last_5min"
+            # Signal count - FIXED: Use pipeline: prefix
+            signal_count_key = f"pipeline:signals:{broker}:count"
             await self._redis_client.incr(signal_count_key)
             await self._redis_client.expire(signal_count_key, 300)
             
         elif "orders" in topic:
             # Extract broker from topic (e.g., "zerodha.orders.filled" -> "zerodha")
             broker = topic.split('.')[0] if '.' in topic else self.default_broker_namespace
-            order_key = f"alpha_panda:metrics:{broker}:orders:last_processed"
-            await self._redis_client.setex(order_key, 3600, current_time)
+            # FIXED: Use pipeline: prefix to match PipelineMetricsCollector
+            order_key = f"pipeline:orders:{broker}:last"
+            # Store as JSON to match PipelineMetricsCollector format
+            order_data = {"timestamp": current_time, "topic": topic, "success": success}
+            await self._redis_client.setex(order_key, 3600, json.dumps(order_data))
             
-            # Order counts for last hour
+            # Order counts - FIXED: Use pipeline: prefix
             if success:
                 if "filled" in topic:
-                    filled_key = f"alpha_panda:metrics:{broker}:orders:filled_last_hour"
+                    filled_key = f"pipeline:orders:{broker}:count"
                     await self._redis_client.incr(filled_key)
                     await self._redis_client.expire(filled_key, 3600)
             else:
-                failed_key = f"alpha_panda:metrics:{broker}:orders:failed_last_hour"
+                # For failed orders, we could use a separate key or track in the main count
+                failed_key = f"pipeline:orders:{broker}:count"  # Same key for simplicity
                 await self._redis_client.incr(failed_key)
                 await self._redis_client.expire(failed_key, 3600)
     

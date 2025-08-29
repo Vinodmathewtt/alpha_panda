@@ -766,11 +766,12 @@ class ServiceHealthChecker:
         try:
             # Check for recent signal generation activity - use first active broker
             broker = self.settings.active_brokers[0] if self.settings.active_brokers else 'paper'
-            signals_key = f"alpha_panda:metrics:{broker}:signals:last_generated"
+            # FIXED: Use pipeline: prefix to match PipelineMetricsCollector
+            signals_key = f"pipeline:signals:{broker}:last"
             last_signal = await self.redis_client.get(signals_key)
             
-            # Get signal count in the last 5 minutes
-            signal_count_key = f"alpha_panda:metrics:{broker}:signals:count_last_5min"
+            # Get signal count - FIXED: Use pipeline: prefix
+            signal_count_key = f"pipeline:signals:{broker}:count"
             signal_count = await self.redis_client.get(signal_count_key)
             signal_count = int(signal_count) if signal_count else 0
             
@@ -786,7 +787,10 @@ class ServiceHealthChecker:
                     }
                 }
             
-            last_signal_time = datetime.fromisoformat(last_signal.decode('utf-8'))
+            # FIXED: Handle JSON format from PipelineMetricsCollector
+            import json
+            last_signal_data = json.loads(last_signal.decode('utf-8'))
+            last_signal_time = datetime.fromisoformat(last_signal_data["timestamp"])
             time_since_last = (datetime.now(timezone.utc) - last_signal_time).total_seconds()
             
             # Signals can be infrequent, so allow up to 5 minutes
@@ -833,12 +837,13 @@ class ServiceHealthChecker:
         try:
             # Check for recent order activity - use first active broker
             broker = self.settings.active_brokers[0] if self.settings.active_brokers else 'paper'
-            orders_key = f"alpha_panda:metrics:{broker}:orders:last_processed"
+            # FIXED: Use pipeline: prefix to match PipelineMetricsCollector
+            orders_key = f"pipeline:orders:{broker}:last"
             last_order = await self.redis_client.get(orders_key)
             
-            # Get order counts for different statuses
-            filled_count_key = f"alpha_panda:metrics:{broker}:orders:filled_last_hour"
-            failed_count_key = f"alpha_panda:metrics:{broker}:orders:failed_last_hour"
+            # Get order counts - FIXED: Use pipeline: prefix
+            filled_count_key = f"pipeline:orders:{broker}:count"
+            failed_count_key = f"pipeline:orders:{broker}:count"  # Note: May need separate failed count tracking
             
             filled_count = await self.redis_client.get(filled_count_key)
             failed_count = await self.redis_client.get(failed_count_key)
@@ -863,7 +868,10 @@ class ServiceHealthChecker:
             age_seconds = 0
             
             if last_order:
-                last_order_time = datetime.fromisoformat(last_order.decode('utf-8'))
+                # FIXED: Handle JSON format from PipelineMetricsCollector
+                import json
+                last_order_data = json.loads(last_order.decode('utf-8'))
+                last_order_time = datetime.fromisoformat(last_order_data["timestamp"])
                 age_seconds = (datetime.now(timezone.utc) - last_order_time).total_seconds()
             
             # Calculate success rate

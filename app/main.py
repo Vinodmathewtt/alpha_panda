@@ -49,6 +49,13 @@ class ApplicationOrchestrator:
         """Initialize application with proper startup sequence."""
         self.logger.info("🚀 Initializing application with comprehensive validation...")
 
+        # PRODUCTION SAFETY: Fail fast on default secrets in production
+        if hasattr(self.settings, 'environment') and self.settings.environment == "production":
+            if hasattr(self.settings, 'auth') and hasattr(self.settings.auth, 'secret_key'):
+                if self.settings.auth.secret_key == "your-secret-key-change-in-production":
+                    self.logger.critical("FATAL: Default secret_key is being used in a production environment. Shutting down.")
+                    sys.exit(1)
+
         # CRITICAL ADDITION: Validate configuration before proceeding
         try:
             config_valid = await validate_startup_configuration(self.settings)

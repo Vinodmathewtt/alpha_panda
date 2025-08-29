@@ -309,3 +309,45 @@ class ZerodhaPortfolioManager(BasePortfolioManager):
             
         except Exception as e:
             self.logger.error("Failed to persist Zerodha portfolios", error=str(e))
+    
+    # CRITICAL FIX: Add missing process_* methods for service compatibility
+    async def process_fill(self, fill_data: Dict[str, Any]) -> None:
+        """Process an order fill event (delegated to handle_fill)."""
+        await self.handle_fill(fill_data)
+    
+    async def process_failure(self, failure_data: Dict[str, Any]) -> None:
+        """Process an order failure event."""
+        strategy_id = failure_data.get('strategy_id')
+        error_message = failure_data.get('error_message', 'Unknown error')
+        order_id = failure_data.get('order_id')
+        self.logger.error("Zerodha order failure processed", 
+                         strategy_id=strategy_id, 
+                         order_id=order_id,
+                         error=error_message)
+        # TODO: Implement failure-specific logic (alerts, position reconciliation, etc.)
+    
+    async def process_submission(self, submission_data: Dict[str, Any]) -> None:
+        """Process an order submission event."""
+        strategy_id = submission_data.get('strategy_id')
+        order_id = submission_data.get('order_id')
+        instrument_token = submission_data.get('instrument_token')
+        self.logger.info("Zerodha order submission processed", 
+                        strategy_id=strategy_id, 
+                        order_id=order_id,
+                        instrument_token=instrument_token)
+        # TODO: Implement tracking of pending orders
+    
+    def get_current_portfolio(self) -> Dict[str, Any]:
+        """Get current portfolio state for PnL snapshots."""
+        # Aggregate all portfolio data
+        aggregated_data = {
+            "total_portfolios": len(self.portfolios),
+            "portfolios": {},
+            "broker": "zerodha",
+            "reconciliation_enabled": True
+        }
+        
+        for portfolio_id, portfolio in self.portfolios.items():
+            aggregated_data["portfolios"][portfolio_id] = portfolio.model_dump()
+        
+        return aggregated_data

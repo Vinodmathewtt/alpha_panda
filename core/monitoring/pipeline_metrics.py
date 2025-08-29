@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
 from core.logging import get_monitoring_logger_safe
+from .metrics_registry import MetricsRegistry
 
 
 @dataclass
@@ -41,11 +42,11 @@ class PipelineMetricsCollector:
             timestamp = datetime.utcnow().isoformat()
             
             # Increment count
-            count_key = f"pipeline:market_ticks:{self.broker_namespace}:count"
+            count_key = MetricsRegistry.market_ticks_count()
             tick_count = await self.redis.incr(count_key)
             
             # Store last tick info
-            last_key = f"pipeline:market_ticks:{self.broker_namespace}:last"
+            last_key = MetricsRegistry.market_ticks_last()
             last_data = {
                 "timestamp": timestamp,
                 "symbol": tick_data.get("symbol"),
@@ -72,11 +73,11 @@ class PipelineMetricsCollector:
             timestamp = datetime.utcnow().isoformat()
             
             # Increment count  
-            count_key = f"pipeline:signals:{self.broker_namespace}:count"
+            count_key = MetricsRegistry.signals_count(self.broker_namespace)
             signal_count = await self.redis.incr(count_key)
             
             # Store last signal info
-            last_key = f"pipeline:signals:{self.broker_namespace}:last"
+            last_key = MetricsRegistry.signals_last(self.broker_namespace)
             last_data = {
                 "timestamp": timestamp,
                 "signal_id": signal.get("id"),
@@ -106,14 +107,15 @@ class PipelineMetricsCollector:
             
             # Increment appropriate count
             if passed:
-                count_key = f"pipeline:signals_validated:{self.broker_namespace}:count"
+                count_key = MetricsRegistry.signals_validated_count(self.broker_namespace)
             else:
+                # Note: signals_rejected not yet in registry - using direct key for now
                 count_key = f"pipeline:signals_rejected:{self.broker_namespace}:count"
                 
             validation_count = await self.redis.incr(count_key)
             
             # Store last validation info
-            last_key = f"pipeline:signals_validated:{self.broker_namespace}:last"
+            last_key = MetricsRegistry.signals_validated_last(self.broker_namespace)
             last_data = {
                 "timestamp": timestamp,
                 "signal_id": signal.get("id"),
@@ -141,11 +143,11 @@ class PipelineMetricsCollector:
             timestamp = datetime.utcnow().isoformat()
             
             # Increment count
-            count_key = f"pipeline:orders:{self.broker_namespace}:count"
+            count_key = MetricsRegistry.orders_count(self.broker_namespace)
             order_count = await self.redis.incr(count_key)
             
             # Store last order info
-            last_key = f"pipeline:orders:{self.broker_namespace}:last"
+            last_key = MetricsRegistry.orders_last(self.broker_namespace)
             last_data = {
                 "timestamp": timestamp,
                 "order_id": order.get("id"),
@@ -174,11 +176,11 @@ class PipelineMetricsCollector:
             timestamp = datetime.utcnow().isoformat()
             
             # Increment count
-            count_key = f"pipeline:portfolio_updates:{self.broker_namespace}:count"
+            count_key = MetricsRegistry.portfolio_updates_count(self.broker_namespace)
             update_count = await self.redis.incr(count_key)
             
             # Store last update info  
-            last_key = f"pipeline:portfolio_updates:{self.broker_namespace}:last"
+            last_key = MetricsRegistry.portfolio_updates_last(self.broker_namespace)
             last_data = {
                 "timestamp": timestamp,
                 "portfolio_id": portfolio_id,

@@ -40,10 +40,70 @@ class Order:
 - **Default: No inheritance**
 - Allowed only for:
   1. **Framework adapters** (e.g., ABCs required by a library)
-  2. **Stable, proven hierarchies** (e.g., Exception subclasses)
+  2. **Stable, proven hierarchies** (e.g., Exception subclasses)  
   3. **Mixins** that are truly stateless and tiny
 
 - If used, **one level max** (no deep trees), and mark overrides with `@override`
+
+### ABC Reduction Policy
+
+**Minimize abstract base classes** in favor of `typing.Protocol`:
+
+- **Use Protocol for**: Domain contracts, service interfaces, strategy patterns
+- **Use ABC only for**: Required framework adapters (e.g., asyncio.Protocol, unittest.TestCase)
+- **Migration strategy**: Keep existing ABCs for backward compatibility, prefer Protocol for new code
+
+```python
+# ❌ Avoid: ABC for domain contracts
+from abc import ABC, abstractmethod
+
+class PaymentProcessor(ABC):
+    @abstractmethod
+    def process_payment(self, amount: float) -> bool:
+        pass
+
+# ✅ Prefer: Protocol for domain contracts
+from typing import Protocol
+
+class PaymentProcessor(Protocol):
+    def process_payment(self, amount: float) -> bool: ...
+
+# Any class with matching methods automatically satisfies the protocol
+class StripeProcessor:  # No inheritance needed!
+    def process_payment(self, amount: float) -> bool:
+        # Implementation
+        return True
+```
+
+**Benefits of Protocol over ABC**:
+- **Duck typing**: No forced inheritance hierarchy
+- **Multiple interfaces**: Classes can satisfy multiple protocols  
+- **Composition-friendly**: Easier to compose objects with protocols
+- **Testing**: Simpler test doubles without inheritance constraints
+
+**Alpha Panda Example**:
+```python
+# Current ABC approach (being phased out)
+class BaseStrategy(ABC):
+    @abstractmethod
+    def on_market_data(self, data: MarketData) -> Generator[TradingSignal, None, None]:
+        pass
+
+# Protocol approach (preferred for new strategies) 
+class StrategyProcessor(Protocol):
+    def process_tick(self, tick: MarketData, history: List[MarketData]) -> Optional[SignalResult]: ...
+    def get_required_history_length(self) -> int: ...
+
+class MomentumProcessor:  # No inheritance!
+    def process_tick(self, tick, history):
+        # Pure strategy logic
+        pass
+    
+    def get_required_history_length(self) -> int:
+        return 20
+
+# Automatically satisfies StrategyProcessor protocol through duck typing
+```
 
 ---
 
@@ -543,8 +603,31 @@ class PostgresOrderRepository:
 - **Don't** introduce globals/singletons; wire via factories/constructors
 - **Don't** expand a class beyond a single responsibility
 
+### ABC Migration Strategy
+
+**Phase 1: Assessment** (Current State)
+- Identify existing ABC usage in codebase
+- `BaseStrategy` in `strategies/base/base.py` - legacy, maintained for backward compatibility
+- Future ABCs should only be for required framework adapters
+
+**Phase 2: New Development** 
+- All new interfaces use `typing.Protocol`
+- Document Protocol patterns in architecture decisions
+- Examples: `StrategyProcessor`, `StrategyValidator` protocols
+
+**Phase 3: Gradual Migration** (Future)
+- Create Protocol alternatives for existing ABCs
+- Add compatibility bridges for smooth transition
+- Mark ABCs as deprecated with migration timelines
+
+**Phase 4: Legacy Retirement**
+- Remove deprecated ABCs after full migration
+- Update documentation and examples
+
 ### Quick Checklist (for PR reviews)
 - [ ] No inheritance (or justified per §2 with `@override`)
+- [ ] No new ABC usage (unless required by framework)
+- [ ] Protocols used for contracts and interfaces
 - [ ] Dependencies injected, typed by Protocols
 - [ ] Dataclasses/attrs for models; immutability where reasonable
 - [ ] Public API small, well-named, fully typed

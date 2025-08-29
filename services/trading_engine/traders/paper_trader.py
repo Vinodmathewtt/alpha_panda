@@ -77,7 +77,8 @@ class PaperTrader(Trader):
             order_id=f"paper_{signal.strategy_id}_{signal.instrument_token}_{str(uuid.uuid4())[:8]}",
             execution_mode=ExecutionMode.PAPER,
             timestamp=signal.timestamp,
-            fees=commission
+            fees=commission,
+            broker="paper"  # CRITICAL FIX: Add required broker field
         )
 
         self.logger.info("PAPER TRADE (SIMULATED)", 
@@ -103,6 +104,7 @@ class PaperTrader(Trader):
             order_id="N/A",
             execution_mode=ExecutionMode.PAPER,
             error_message=error_message,
-            timestamp=signal.timestamp
+            timestamp=signal.timestamp,
+            broker="paper"  # CRITICAL FIX: Add required broker field
         )
         return failed_event_data.model_dump(mode='json')

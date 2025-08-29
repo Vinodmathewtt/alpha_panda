@@ -38,6 +38,23 @@ API Service (Read Path - Unified)
 - **Protocol-Based Contracts**: Type-safe interfaces for service dependencies
 - **Performance Optimizations**: O(1) instrument-to-strategy mappings for efficient routing
 
+### 🏷️ Important Namespace Distinction
+
+**Two Different "Namespace" Concepts (Do Not Confuse):**
+
+1. **`BROKER_NAMESPACE` Environment Variable** (❌ **Deprecated & Removed**)
+   - **Old System**: Used for deployment-level broker isolation
+   - **Status**: Successfully migrated to `ACTIVE_BROKERS` list configuration
+   - **Migration**: `BROKER_NAMESPACE=zerodha` → `ACTIVE_BROKERS=paper,zerodha`
+
+2. **`broker_namespace` Parameter** (✅ **Valid & Required**)
+   - **Current System**: Service-level metrics collection namespacing
+   - **Purpose**: Identifies which service/component is recording metrics
+   - **Examples**: `"strategy_runner"`, `"shared"`, `"paper"`, `"zerodha"`
+   - **Usage**: Creates Redis keys like `pipeline:signals:strategy_runner:count`
+
+**Key Point**: If you see `broker_namespace="strategy_runner"` in code, this is **correct** and different from the old `BROKER_NAMESPACE` env var that was removed.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -96,89 +113,155 @@ make test-performance-with-env     # Performance tests
 make test-clean
 ```
 
-## 🧪 Comprehensive Testing Framework
+## 🧪 New Production-Ready Testing Framework
 
-Alpha Panda includes a **production-ready testing framework** with **complete environment isolation** and health-gated startup for reliable CI/CD execution.
+**Status**: ✅ **PRODUCTION-READY** | 🚀 **Real Infrastructure Integration** | ⚡ **Zero Mock Philosophy**
 
-### 🏗️ Test Environment Architecture
+Alpha Panda has been completely rebuilt with a **revolutionary testing framework** that uses **real infrastructure** to catch production issues that mocks cannot detect.
 
-**Complete Infrastructure Isolation:**
+### 🔥 **MAJOR TESTING OVERHAUL COMPLETE**
 
-- **Development Environment**: `localhost:5432`, `:6379`, `:9092`
-- **Test Environment**: `localhost:5433`, `:6380`, `:19092`
-- **Zero Conflicts**: Run dev and test environments simultaneously
-- **Health-Gated Startup**: All services wait for readiness before testing
+**What Changed**: Complete migration from mock-heavy testing to **real infrastructure integration testing**.
 
-### 🚀 Quick Test Setup
+#### **✅ NEW: Real Infrastructure Testing**
+- **Redis Integration**: Tests with actual Redis client (both decode_responses modes)
+- **Kafka Integration**: Real message serialization/deserialization with actual topics
+- **PostgreSQL Integration**: Actual database connections, transactions, and ACID compliance
+- **Zerodha Real API**: End-to-end tests with actual market data and authentication
+
+#### **✅ NEW: Critical Issue Prevention**
+- **Service Interface Validation**: Prevents AttributeError exceptions before runtime
+- **Event Schema Validation**: Catches missing EventType enum values during development
+- **Type Conversion Testing**: Redis bytes vs string handling with real clients
+- **Serialization Testing**: EventEnvelope round-trip through actual Kafka topics
+
+### 🚀 **Quick Start Testing**
 
 ```bash
-# 1. Install dependencies with version constraints
-pip install -r requirements.txt -c constraints.txt
+# 1. Unit Tests - Core component validation with real infrastructure
+python -m pytest tests/unit/ -v --tb=short
 
-# 2. Start test infrastructure with health checks
-make test-setup
-# This runs: docker compose -f docker-compose.test.yml up -d && wait
+# 2. Integration Tests - Service interactions with real Redis/Kafka/PostgreSQL
+python -m pytest tests/integration/ -v --tb=short
 
-# 3. Run tests with proper environment isolation
-make test-with-env                 # Integration + E2E tests
-make test-performance-with-env     # Performance tests
-make test-all-infra               # Complete infrastructure test suite
+# 3. End-to-End Tests - Complete pipeline with real Zerodha authentication
+# ⚠️  REQUIRES: ZERODHA_API_KEY, ZERODHA_API_SECRET, ZERODHA_ACCESS_TOKEN
+python -m pytest tests/e2e/ -v -s --tb=short
 
-# 4. Clean up when done
-make test-clean
+# 4. Complete Test Suite
+python -m pytest tests/ -v --tb=short
+
+# 5. Critical Path Validation (< 30 seconds)
+python -m pytest tests/unit/test_event_envelope_validation.py tests/unit/test_service_interfaces.py -v
 ```
 
-### 🔧 Advanced Test Commands
+### 🔐 **Zerodha Authentication Requirements**
 
+**CRITICAL**: End-to-end tests require **real Zerodha credentials** for authentic market data validation.
+
+#### **Required Environment Variables:**
 ```bash
-# Traditional test commands (unit tests only)
-make test-unit        # Unit tests with coverage
-make test-integration # Service integration tests
-make test-e2e         # End-to-end pipeline tests
-make test-performance # Performance and load tests
-make test-chaos       # Chaos engineering tests
-
-# New infrastructure-aware commands
-make test-setup                    # Health-gated infrastructure startup
-make test-with-env                 # Tests with isolated test environment
-make test-performance-with-env     # Performance tests with test env
-make test-all-infra               # Complete infrastructure test suite
-
-# Monitoring and cleanup
-make test-status      # Check test environment status
-make test-clean       # Clean test infrastructure
+export ZERODHA_API_KEY="your_api_key_here"
+export ZERODHA_API_SECRET="your_api_secret_here"
+export ZERODHA_ACCESS_TOKEN="your_access_token_here"
 ```
 
-### 🏥 Health-Gated Infrastructure
+#### **Authentication Failure Policy:**
+- **Test Behavior**: If Zerodha authentication fails, tests will **immediately stop** and display clear error message
+- **User Responsibility**: It is the **user's responsibility** to provide valid, working Zerodha credentials
+- **No Fallbacks**: Tests will **not** fall back to mock data - authentication must work for real market feed testing
+- **Clear Error Messages**: Authentication failures will show specific error details to help user resolve issues
 
-**Modern Docker Compose Approach:**
+#### **Authentication Error Examples:**
+```bash
+# Example error message when credentials are missing:
+"Zerodha credentials not available - set ZERODHA_API_KEY, ZERODHA_API_SECRET, ZERODHA_ACCESS_TOKEN"
+
+# Example error message when authentication fails:
+"Zerodha authentication failed: Invalid access token. Please regenerate your access token."
+```
+
+#### **Safety Enforcement:**
+- **Paper Trading Mode**: All tests run in **paper trading mode only** for safety
+- **No Live Trading**: Tests validate that live trading is **disabled** even with real credentials
+- **Market Data Only**: Real credentials used **only** for market data access, not order placement
+
+#### **Market Hours Behavior:**
+- **During Market Hours (9:15 AM - 3:30 PM IST)**: Live market data with real-time price changes
+- **During Non-Market Hours**: Zerodha provides **closing price feeds** with constant values
+- **Test Considerations**: Tests during non-market hours will receive **constant price streams**
+- **Strategy Impact**: Momentum and volatility-based strategies may not generate signals with static prices
+- **Recommendation**: Run comprehensive E2E tests during market hours for full validation
+
+### 🏗️ **Test Infrastructure Requirements**
+
+**Required Infrastructure Components:**
+
+| **Component** | **Test Port** | **Purpose** | **Docker Image** |
+|---------------|---------------|-------------|------------------|
+| Redis | 6380 | Cache testing, type conversion validation | `redis:7-alpine` |
+| Kafka | 19092 | Message streaming, serialization testing | `confluentinc/cp-kafka:7.4.0` |
+| PostgreSQL | 5433 | Database integration, transaction testing | `postgres:15-alpine` |
 
 ```bash
-# Start with health checks
+# Start test infrastructure
 docker compose -f docker-compose.test.yml up -d
-docker compose -f docker-compose.test.yml wait  # 🔑 CRITICAL
 
-# Health checks ensure services are ready:
-# ✅ Redpanda: rpk cluster info
-# ✅ PostgreSQL: pg_isready -U alpha_panda_test
-# ✅ Redis: redis-cli ping
+# Verify infrastructure health
+docker compose -f docker-compose.test.yml ps
+
+# Stop and cleanup
+docker compose -f docker-compose.test.yml down -v
 ```
 
-### 📁 Test Environment Configuration
+### 🎯 **Critical Testing Policies**
 
-**Isolated Test Configuration (`.env.test`):**
+#### **MANDATORY: Real Infrastructure First**
+- Use actual Redis, Kafka, PostgreSQL for all integration tests
+- Mock usage ONLY for external APIs requiring credentials
+- Rationale: Mocks hide critical type conversion, serialization, and connection issues
 
-```bash
-# Test-specific ports and databases
-DATABASE_URL=postgresql+asyncpg://alpha_panda_test:test_password@localhost:5433/alpha_panda_test
-REDIS_URL=redis://localhost:6380
-REDPANDA_BOOTSTRAP_SERVERS=localhost:19092
+#### **MANDATORY: Fail-Fast Validation**
+- Zero silent failures - every error must be logged, alerted, or raise exception
+- System must fail fast when critical dependencies are missing
+- All failures must be observable via logs, metrics, or exceptions
 
-# Test-specific settings
-ENVIRONMENT=testing
-MOCK_MARKET_FEED_ENABLED=true
-MOCK_ZERODHA_ENABLED=true
-```
+#### **MANDATORY: Production-Like Test Environment**
+- Test infrastructure on separate ports for complete isolation
+- Real data flows through actual Kafka topics with real serialization
+- State persistence using real databases and caches
+
+### 📊 **Testing Framework Architecture**
+
+#### **Layer 1: Unit Tests** - Core Component Validation
+- Event schema validation (EventEnvelope, OrderFilled, MarketData)
+- Stream processing patterns with real Kafka integration
+- Service interface validation to prevent method call errors
+- Redis type handling for both decode_responses modes
+
+#### **Layer 2: Integration Tests** - Service Interaction Validation
+- Multi-broker topic routing with real Kafka topics
+- Cache isolation with Redis key prefixing
+- Database transactions with real PostgreSQL
+- End-to-end message flow through complete infrastructure stack
+
+#### **Layer 3: End-to-End Tests** - Complete Pipeline Validation
+- Zerodha authentication with real API credentials
+- Market data integration through live WebSocket feed
+- Complete trading pipeline from market data to portfolio updates
+- Safety validation ensuring paper trading enforcement
+
+### 🔥 **Production Issues Prevented**
+
+The new testing framework prevents these critical runtime issues:
+
+1. **Redis Type Errors**: `TypeError: a bytes-like object is required, not 'str'`
+2. **Missing Service Methods**: `AttributeError: 'Service' object has no attribute 'method_name'`
+3. **Missing Enum Values**: `AttributeError: type object 'EventType' has no attribute 'SYSTEM_ERROR'`
+4. **Kafka Serialization Failures**: Message round-trip data corruption
+5. **Database Connection Issues**: Connection pooling and transaction failures
+
+**See [tests/README.md](tests/README.md) for complete testing documentation and policies.**
 
 ### 🐳 Test Infrastructure Components
 
@@ -351,6 +434,12 @@ alpha_panda/
 │   ├── trading_engine/    # Order execution (broker-segregated)
 │   └── portfolio_manager/ # Portfolio state (broker-segregated)
 ├── strategies/            # Pure trading strategy logic
+│   ├── base/             # BaseStrategy foundation components
+│   ├── legacy/           # Inheritance-based strategies (production active)
+│   ├── core/             # Composition framework (protocols, config, executor, factory)
+│   ├── implementations/  # Modern strategy implementations
+│   ├── validation/       # Strategy validation components
+│   └── configs/          # YAML configuration files
 ├── api/                   # FastAPI read endpoints
 ├── tests/                 # Comprehensive testing framework
 │   ├── unit/             # Fast isolated tests
