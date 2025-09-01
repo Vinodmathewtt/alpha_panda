@@ -5,14 +5,18 @@ import time
 
 from app.containers import AppContainer
 from services.auth.service import AuthService
-from core.logging.enhanced_logging import get_api_logger, get_audit_logger, get_error_logger
+from core.logging import (
+    get_api_logger_safe,
+    get_audit_logger_safe,
+    get_error_logger_safe,
+)
 
 router = APIRouter(tags=["Authentication"])
 
 # Initialize loggers
-api_logger = get_api_logger("auth_api")
-audit_logger = get_audit_logger("auth_audit")
-error_logger = get_error_logger("auth_errors")
+api_logger = get_api_logger_safe("auth_api")
+audit_logger = get_audit_logger_safe("auth_audit")
+error_logger = get_error_logger_safe("auth_errors")
 
 
 @router.get("/auth/status")

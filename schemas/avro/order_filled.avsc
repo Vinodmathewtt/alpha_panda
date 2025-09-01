@@ -1,0 +1,19 @@
+{
+  "type": "record",
+  "name": "OrderFilled",
+  "namespace": "alpha.panda",
+  "fields": [
+    {"name": "order_id", "type": "string"},
+    {"name": "instrument_token", "type": "long"},
+    {"name": "quantity", "type": "int"},
+    {"name": "fill_price", "type": "double"},
+    {"name": "timestamp", "type": "string"},
+    {"name": "broker", "type": "string"},
+    {"name": "side", "type": ["null", "string"], "default": "BUY"},
+    {"name": "strategy_id", "type": ["null", "string"], "default": null},
+    {"name": "signal_type", "type": ["null", "string"], "default": null},
+    {"name": "execution_mode", "type": ["null", "string"], "default": null},
+    {"name": "fees", "type": ["null", "double"], "default": null}
+  ]
+}
+

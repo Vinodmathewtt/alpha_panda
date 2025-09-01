@@ -141,22 +141,23 @@ await db_manager.init()
 ```python
 # app/main.py:60-62
 services = self.container.lifespan_services()
-# Start all 7 services concurrently
+# Start services concurrently
 await asyncio.gather(*(service.start() for service in services if service))
 self.logger.info("✅ All services started successfully.")
 ```
 
 **Service Startup Order:**
 ```python
-# app/containers.py:164-172
+# app/containers.py
 lifespan_services = providers.List(
-    auth_service,           # 1. Already initialized during health checks
-    market_feed_service,    # 2. Zerodha WebSocket connection (depends on auth)
-    strategy_runner_service,# 3. Load active strategies from database
-    risk_manager_service,   # 4. Initialize risk validation rules
-    trading_engine_service, # 5. Paper + Zerodha trading engines
-    portfolio_manager_service, # 6. Portfolio state management
-    pipeline_monitor        # 7. System observability metrics
+    auth_service,            # Already initialized during health checks
+    instrument_registry_service,
+    market_feed_service,     # Zerodha WebSocket connection (depends on auth)
+    strategy_runner_service, # Load active strategies from database
+    risk_manager_service,    # Initialize risk validation rules
+    paper_trading_service,   # Broker-scoped paper trading
+    zerodha_trading_service, # Broker-scoped Zerodha trading
+    pipeline_monitor         # System observability metrics
 )
 ```
 
@@ -206,7 +207,7 @@ services:
 ZERODHA__ENABLED=true                    # MANDATORY
 ZERODHA__API_KEY=your_api_key           # MANDATORY  
 ZERODHA__API_SECRET=your_api_secret     # MANDATORY
-BROKER_NAMESPACE=paper                  # paper|zerodha
+ACTIVE_BROKERS=paper,zerodha            # Unified multi-broker deployment
 DATABASE__POSTGRES_URL=postgresql+asyncpg://alpha_panda:alpha_panda@localhost:5432/alpha_panda
 REDIS__URL=redis://localhost:6379/0
 REDPANDA__BOOTSTRAP_SERVERS=localhost:9092
@@ -335,21 +336,26 @@ asyncio.run(auth_service.auth_manager.initialize())
 "
 ```
 
-## 🏢 Broker Segregation
+## 🏢 Multi-Broker Architecture
 
-Alpha Panda treats **paper trading** and **zerodha trading** as completely separate brokers:
+**Current Architecture**: Alpha Panda now supports unified multi-broker deployments where a single service instance handles multiple brokers simultaneously:
 
-### Configuration
+### Modern Configuration (Recommended)
 ```bash
-# Paper trading deployment
-export BROKER_NAMESPACE=paper
+# Multi-broker deployment (default)
+export ACTIVE_BROKERS=paper,zerodha
 python cli.py run
 
-# Zerodha trading deployment  
-export BROKER_NAMESPACE=zerodha
+# Single broker deployment (if needed)
+export ACTIVE_BROKERS=paper
 python cli.py run
+```
 
-# Both can run simultaneously in separate processes
+### Legacy Configuration (Deprecated)
+```bash
+# Old approach (removed): BROKER_NAMESPACE
+# This variable is no longer read by the application and has no effect.
+# Use ACTIVE_BROKERS instead (see Modern Configuration above)
 ```
 
 ### Topic Segregation

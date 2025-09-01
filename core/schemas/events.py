@@ -1,31 +1,30 @@
 # CRITICAL: Standardized event envelope and data models
 # This is the foundation - ALL services must use these schemas
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Optional, Dict, Any, List
-from uuid import uuid4
 from datetime import datetime
-import time
+from core.utils.ids import generate_event_id
 
 
 def generate_uuid7():
-    """Generate UUID v7 for time-ordered event IDs (fallback to timestamp-based UUID)"""
-    # Since uuid7 library isn't working, use uuid4 with timestamp prefix for ordering
-    timestamp = int(time.time() * 1000)  # milliseconds since epoch
-    return f"{timestamp:013x}-{str(uuid4())[13:]}"
+    """Deprecated shim. Use core.utils.ids.generate_event_id()."""
+    return generate_event_id()
 
 
 class AlphaPandaBaseModel(BaseModel):
-    """Base model for all Alpha Panda schemas with proper JSON encoding"""
-    
-    class Config:
-        json_encoders = {
-            Decimal: lambda v: float(v) if v is not None else None,
-            datetime: lambda v: v.isoformat() if v is not None else None,
+    """Base model for all Alpha Panda schemas with proper JSON encoding (Pydantic v2)."""
+
+    # Pydantic v2 configuration for JSON serialization
+    model_config = ConfigDict(
+        json_encoders={
+            Decimal: (lambda v: float(v) if v is not None else None),
+            datetime: (lambda v: v.isoformat() if v is not None else None),
         }
+    )
 
 
 class EventType(str, Enum):
@@ -43,10 +42,10 @@ class EventType(str, Enum):
 class EventEnvelope(AlphaPandaBaseModel):
     """MANDATORY standardized envelope for ALL events"""
     # CRITICAL: Add missing required fields
-    id: str = Field(default_factory=generate_uuid7, description="Globally unique event ID for deduplication")
+    id: str = Field(default_factory=generate_event_id, description="Globally unique event ID for deduplication")
     correlation_id: str = Field(..., description="Links related events across services for tracing") 
     causation_id: Optional[str] = Field(None, description="ID of event that caused this one")
-    trace_id: str = Field(default_factory=generate_uuid7, description="Trace ID for observability across service boundaries")
+    trace_id: str = Field(default_factory=generate_event_id, description="Trace ID for observability across service boundaries")
     parent_trace_id: Optional[str] = Field(None, description="Parent trace ID for hierarchical tracing")
     broker: str = Field(..., description="Broker namespace (paper|zerodha) - audit only, NOT for routing")
     
@@ -61,7 +60,7 @@ class EventEnvelope(AlphaPandaBaseModel):
     def create_child_event(self, event_type: EventType, data: Any, source: str, key: str) -> 'EventEnvelope':
         """Create child event with trace inheritance"""
         return EventEnvelope(
-            id=generate_uuid7(),
+            id=generate_event_id(),
             type=event_type,
             ts=datetime.now(timezone.utc),
             source=source,
@@ -120,6 +119,8 @@ class MarketTick(AlphaPandaBaseModel):
     instrument_token: int
     last_price: Decimal
     timestamp: datetime
+    # Optional symbol/name for convenience (not always provided by source)
+    symbol: Optional[str] = None
     
     # Volume and quantity data
     volume_traded: Optional[int] = Field(None, description="Total volume traded")
@@ -202,7 +203,8 @@ class OrderFilled(AlphaPandaBaseModel):
     fill_price: Decimal
     timestamp: datetime
     broker: str
-    side: Optional[str] = "BUY"  # BUY or SELL
+    # Clarify side using enum for type safety; JSON serialization keeps values (e.g., "BUY")
+    side: SignalType = SignalType.BUY
     strategy_id: Optional[str] = None
     signal_type: Optional[SignalType] = None
     execution_mode: Optional[ExecutionMode] = None
@@ -220,7 +222,7 @@ class OrderFailed(AlphaPandaBaseModel):
     execution_mode: ExecutionMode
     error_message: str
     timestamp: datetime
-    broker: str  # CRITICAL FIX: Add required broker field
+    broker: str
 
 
 class Position(AlphaPandaBaseModel):

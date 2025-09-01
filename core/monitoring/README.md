@@ -62,6 +62,8 @@ print(f"All keys: {validation_result['keys']}")
 
 ## Prometheus Metrics Integration
 
+Note: The API exposes a shared Prometheus registry at `/metrics`. Collectors should register against the DI‑provided registry to ensure one scrape source for the whole app.
+
 ### Production Metrics Collection
 ```python
 from core.monitoring.prometheus_metrics import PrometheusMetricsCollector
@@ -101,6 +103,7 @@ with MetricsContextManager(metrics, "portfolio_manager", "position_update"):
 - **Order Execution**: `trading_orders_executed_total{broker, order_type, status}`  
 - **Strategy Performance**: `strategy_pnl_current{strategy_id, broker}`
 - **Market Data**: `market_ticks_received_total{source}`
+- **DLQ Messages**: `trading_dlq_messages_total{service, broker}` (increments on DLQ publish)
 
 #### System Performance Metrics
 - **Processing Latency**: `trading_processing_latency_seconds{service, event_type}`
@@ -310,6 +313,11 @@ python -m pytest tests/unit/monitoring/test_metrics_registry.py -v
 
 # Test Prometheus metrics integration
 python -m pytest tests/unit/monitoring/test_prometheus_metrics.py -v
+
+# Test metric key namespacing and topic routing (added)
+python -m pytest tests/unit/test_metrics_registry_keys.py -v
+python -m pytest tests/unit/test_topic_routing.py -v
 ```
 
 The monitoring system supports the modern composition-based strategy framework while maintaining full compatibility with legacy inheritance-based strategies currently running in production.
+> Compatibility note: historical use of a global `broker_namespace` label for metrics may still appear in some keys for backward compatibility. New code should always pass explicit `broker`/`broker_context`. Over time, migrate remaining metrics and dashboards away from `broker_namespace` to avoid ambiguity.

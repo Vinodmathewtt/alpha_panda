@@ -12,6 +12,8 @@ from core.database.models import StrategyConfiguration
 from core.logging import get_trading_logger_safe, get_performance_logger_safe, get_error_logger_safe
 from core.market_hours.market_hours_checker import MarketHoursChecker
 from core.monitoring.pipeline_metrics import PipelineMetricsCollector
+from core.monitoring.prometheus_metrics import PrometheusMetricsCollector
+from core.observability.tracing import get_tracer
 from .factory import StrategyFactory
 # Legacy runner import removed - composition-only architecture
 
@@ -19,7 +21,7 @@ from .factory import StrategyFactory
 class StrategyRunnerService:
     """Modern composition-based strategy runner service - NO LEGACY SUPPORT"""
     
-    def __init__(self, config: RedpandaSettings, settings: Settings, db_manager: DatabaseManager, redis_client=None, market_hours_checker: MarketHoursChecker = None):
+    def __init__(self, config: RedpandaSettings, settings: Settings, db_manager: DatabaseManager, redis_client=None, market_hours_checker: MarketHoursChecker = None, prometheus_metrics: PrometheusMetricsCollector = None):
         self.settings = settings
         self.db_manager = db_manager
         self.logger = get_trading_logger_safe("strategy_runner")
@@ -35,6 +37,8 @@ class StrategyRunnerService:
         
         # Market hours checker for market status awareness - use injected or create new
         self.market_hours_checker = market_hours_checker or MarketHoursChecker()
+        # Prometheus metrics (shared registry via DI)
+        self.prom_metrics: PrometheusMetricsCollector | None = prometheus_metrics
         
         # Pipeline monitoring metrics
         self.signals_generated = 0
@@ -52,6 +56,7 @@ class StrategyRunnerService:
         
         # Build streaming service - CLEANED: Remove wrapper pattern
         self.orchestrator = (StreamServiceBuilder("strategy_runner", config, settings)
+            .with_prometheus(prometheus_metrics)
             .with_redis(redis_client)
             .with_error_handling()
             .with_metrics()
@@ -73,13 +78,22 @@ class StrategyRunnerService:
     async def start(self):
         """Start the strategy runner service"""
         await self.orchestrator.start()
-        
+
         # Load strategies from database
         await self._load_strategies()
-        
+
         self.logger.info(f"🏭 Composition strategy runner started with active brokers: {self.settings.active_brokers}",
                         composition_strategies=len(self.strategy_executors),
                         architecture="composition_only")
+
+        # Mark pipeline stage healthy in Prometheus for active brokers
+        if self.prom_metrics:
+            try:
+                for broker in self.active_brokers:
+                    self.prom_metrics.set_pipeline_health("strategy_runner", broker, True)
+            except Exception as _e:
+                # Do not fail startup on metrics errors
+                self.logger.warning("Failed to set Prometheus pipeline health", error=str(_e))
         
     async def _load_strategies(self):
         """Load active strategies from database, fallback to YAML if empty"""
@@ -134,9 +148,18 @@ class StrategyRunnerService:
         await self.orchestrator.stop()
         self.logger.info("Strategy runner service stopped")
     
+    def _is_event_type(self, message: Dict[str, Any], et: EventType) -> bool:
+        t = message.get('type')
+        if isinstance(t, EventType):
+            return t == et
+        if isinstance(t, str):
+            return t == et or t == et.value or t.lower() == et.value
+        return False
+
     async def _handle_market_tick(self, message: Dict[str, Any], topic: str) -> None:
         """Process market tick and generate signals for all active brokers."""
-        if message.get('type') != EventType.MARKET_TICK:
+        tracer = get_tracer("strategy_runner")
+        if not self._is_event_type(message, EventType.MARKET_TICK):
             return
         
         if not self.market_hours_checker.is_market_open():
@@ -159,6 +182,12 @@ class StrategyRunnerService:
             executor = self.strategy_executors.get(strategy_id)
             if executor:
                 try:
+                    with tracer.start_as_current_span("strategy.process_tick") as span:
+                        try:
+                            span.set_attribute("strategy.id", strategy_id)
+                            span.set_attribute("instrument_token", instrument_token)
+                        except Exception:
+                            pass
                     # COMPOSITION: Process using StrategyExecutor
                     from core.schemas.events import MarketTick
                     
@@ -219,7 +248,7 @@ class StrategyRunnerService:
     
     async def _emit_signal(self, signal, broker: str, strategy_id: str):
         """Emit trading signal to appropriate broker topic with validation"""
-        
+        tracer = get_tracer("strategy_runner")
         try:
             # Validate broker configuration
             if broker not in self.active_brokers:
@@ -239,23 +268,32 @@ class StrategyRunnerService:
             
             # Get producer safely and emit signal
             producer = await self._get_producer()
-            key = f"{strategy_id}:{signal.instrument_token}"
+            from core.schemas.topics import PartitioningKeys
+            key = PartitioningKeys.trading_signal_key(strategy_id, signal.instrument_token)
             
-            await producer.send(
-                topic=topic,
-                key=key,
-                data=signal.dict(),
-                event_type=EventType.TRADING_SIGNAL,
-                broker=broker  # CRITICAL FIX: Add required broker parameter
-            )
-            
+            with tracer.start_as_current_span("strategy.emit_signal") as span:
+                try:
+                    span.set_attribute("strategy.id", strategy_id)
+                    span.set_attribute("broker", broker)
+                    span.set_attribute("topic", topic)
+                    span.set_attribute("instrument_token", signal.instrument_token)
+                except Exception:
+                    pass
+                await producer.send(
+                    topic=topic,
+                    key=key,
+                    data=signal.model_dump(mode='json'),
+                    event_type=EventType.TRADING_SIGNAL,
+                    broker=broker
+                )
+
             # Record pipeline metrics for observability
             if self.metrics_collector:
                 try:
                     # Use proper signal recording method for consistency
                     signal_data = signal.dict()
                     signal_data.update({"strategy_id": strategy_id, "id": f"{strategy_id}_{signal.instrument_token}"})
-                    await self.metrics_collector.record_signal_generated(signal_data)
+                    await self.metrics_collector.record_signal_generated(signal_data, broker_context=broker)
                     
                     # Track strategy-specific metrics
                     await self.metrics_collector.increment_count(
@@ -265,6 +303,22 @@ class StrategyRunnerService:
                     # Don't fail signal emission due to metrics errors
                     self.logger.warning("Failed to record metrics", 
                                        error=str(metrics_error))
+
+            # Record Prometheus business and throughput metrics
+            if self.prom_metrics:
+                try:
+                    self.prom_metrics.record_signal_generated(
+                        strategy_id=strategy_id,
+                        broker=broker,
+                        signal_type=signal.signal_type.value,
+                    )
+                    self.prom_metrics.record_event_processed(
+                        service="strategy_runner",
+                        broker=broker,
+                        event_type=EventType.TRADING_SIGNAL.value,
+                    )
+                except Exception as _e:
+                    self.logger.warning("Failed to record Prometheus metrics", error=str(_e))
             
             self.logger.info("Signal generated", 
                             broker=broker,

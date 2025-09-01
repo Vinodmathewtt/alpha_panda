@@ -1,0 +1,130 @@
+groups:
+  - name: logging.rules
+    rules:
+      # Drops detected in the logging queue
+      - alert: LoggingQueueDrops
+        expr: increase(alpha_panda_logging_queue_dropped_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          service: alpha-panda
+          category: logging
+        annotations:
+          summary: "Logging queue drops detected"
+          description: |
+            One or more log records were dropped by the async logging queue in the last 5 minutes.
+            Investigate high-volume loggers or downstream I/O slowness.
+
+      # Sustained backpressure on the logging queue
+      - alert: LoggingQueueBackpressure
+        expr: alpha_panda_logging_queue_size / alpha_panda_logging_queue_capacity > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: alpha-panda
+          category: logging
+        annotations:
+          summary: "Logging queue >80% for 5 minutes (backpressure)"
+          description: |
+            The logging queue has exceeded 80% of its capacity for 5 minutes, indicating sustained backpressure.
+            Consider reducing log volume, improving disk I/O, or increasing queue capacity.
+
+      # Critical saturation of the logging queue
+      - alert: LoggingQueueSaturation
+        expr: alpha_panda_logging_queue_size / alpha_panda_logging_queue_capacity > 0.95
+        for: 1m
+        labels:
+          severity: critical
+          service: alpha-panda
+          category: logging
+        annotations:
+          summary: "Logging queue >95% for 1 minute (risk of drops)"
+          description: |
+            The logging queue is nearly full and may drop log records.
+            Reduce log volume immediately or increase capacity.
+
+  - name: trading.rules
+    rules:
+      # Trading DLQ burst
+      - alert: TradingDLQBurst
+        expr: increase(trading_dlq_messages_total{service=~"paper_trading|zerodha_trading"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          service: alpha-panda
+          category: trading
+        annotations:
+          summary: "Trading DLQ messages detected in last 5 minutes"
+          description: |
+            One or more trading messages were routed to DLQ. Investigate processing errors.
+
+      # Orders inactivity alerts (5 minutes)
+      - alert: PaperTradingOrdersInactivity
+        expr: time() - trading_last_activity_timestamp_unix{service="paper_trading",stage="orders",broker="paper"} > 300
+        for: 1m
+        labels:
+          severity: warning
+          service: paper_trading
+          category: trading
+        annotations:
+          summary: "Paper trading orders inactive for >5 minutes"
+          description: |
+            No paper trading order activity detected for over 5 minutes.
+
+      - alert: ZerodhaTradingOrdersInactivity
+        expr: time() - trading_last_activity_timestamp_unix{service="zerodha_trading",stage="orders",broker="zerodha"} > 300
+        for: 1m
+        labels:
+          severity: warning
+          service: zerodha_trading
+          category: trading
+        annotations:
+          summary: "Zerodha trading orders inactive for >5 minutes"
+          description: |
+            No zerodha trading order activity detected for over 5 minutes.
+
+      # Consumer lag
+      - alert: TradingConsumerLagHigh
+        expr: max(kafka_consumergroup_lag{group=~".*(paper_trading|zerodha_trading).*"}) by (group) > 5000
+        for: 10m
+        labels:
+          severity: warning
+          service: alpha-panda
+          category: streaming
+        annotations:
+          summary: "Trading consumer lag > 5k for 10m"
+          description: |
+            Consumer lag for trading services is persistently high.
+
+      # Order fail rate (if emitted)
+      - alert: PaperTradingOrderFailRateHigh
+        expr: (
+          sum(rate(trading_events_processed_total{service="paper_trading",event_type="order_failed"}[5m]))
+          /
+          max(1, sum(rate(trading_events_processed_total{service="paper_trading"}[5m])))
+        ) > 0.03
+        for: 10m
+        labels:
+          severity: warning
+          service: paper_trading
+          category: trading
+        annotations:
+          summary: "Paper trading order fail rate > 3%"
+          description: |
+            Paper trading order failure rate exceeded 3% over the last 10 minutes.
+
+      - alert: ZerodhaTradingOrderFailRateHigh
+        expr: (
+          sum(rate(trading_events_processed_total{service="zerodha_trading",event_type="order_failed"}[5m]))
+          /
+          max(1, sum(rate(trading_events_processed_total{service="zerodha_trading"}[5m])))
+        ) > 0.03
+        for: 10m
+        labels:
+          severity: warning
+          service: zerodha_trading
+          category: trading
+        annotations:
+          summary: "Zerodha trading order fail rate > 3%"
+          description: |
+            Zerodha trading order failure rate exceeded 3% over the last 10 minutes.

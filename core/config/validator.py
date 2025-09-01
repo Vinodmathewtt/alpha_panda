@@ -223,13 +223,34 @@ class ConfigurationValidator:
                 severity="error"
             ))
         
-        # For zerodha broker, validate API credentials are set if zerodha is active
+        # Validate Zerodha credentials more strictly
+        # 1) If zerodha.enabled is True, require API key/secret
+        try:
+            if getattr(self.settings.zerodha, "enabled", False):
+                if not (self.settings.zerodha.api_key and self.settings.zerodha.api_secret):
+                    self.validation_results.append(ValidationResult(
+                        is_valid=False,
+                        component="Broker",
+                        message=(
+                            "Zerodha enabled but API credentials are missing. "
+                            "Set ZERODHA__API_KEY and ZERODHA__API_SECRET or disable Zerodha."
+                        ),
+                        severity="error"
+                    ))
+        except Exception:
+            # If settings.zerodha is not well-formed, treat as error when broker is active
+            pass
+
+        # 2) If 'zerodha' is in active_brokers, also require API key/secret
         if "zerodha" in self.settings.active_brokers:
             if not self.settings.zerodha.api_key or not self.settings.zerodha.api_secret:
                 self.validation_results.append(ValidationResult(
                     is_valid=False,
                     component="Broker",
-                    message="Zerodha API credentials not configured but zerodha broker is active",
+                    message=(
+                        "Zerodha broker is active but API credentials are not configured. "
+                        "Provide ZERODHA__API_KEY and ZERODHA__API_SECRET or remove 'zerodha' from ACTIVE_BROKERS."
+                    ),
                     severity="error"
                 ))
     

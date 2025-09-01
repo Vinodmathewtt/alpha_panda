@@ -21,9 +21,9 @@ Strategy Runner Service (Multi-Broker)
        ↓ (broker.signals.raw topics - paper.signals.raw, zerodha.signals.raw)
 Risk Manager Service (Multi-Broker)
        ↓ (broker.signals.validated topics - paper.signals.validated, zerodha.signals.validated)
-Trading Engine Service (Multi-Broker)
-       ↓ (broker.orders.filled topics - paper.orders.filled, zerodha.orders.filled)
-Portfolio Manager Service (Multi-Broker)
+Paper Trading Service (broker-scoped) and Zerodha Trading Service (broker-scoped)
+       ↓ (broker.order lifecycle topics - paper.orders.*, zerodha.orders.*)
+Portfolio Read Path
        ↓ (Redis cache with broker prefixes - paper:portfolio:, zerodha:portfolio:)
 API Service (Read Path - Unified)
 ```
@@ -35,8 +35,10 @@ API Service (Read Path - Unified)
 - **Unified Consumer Groups**: One consumer group per service processes all broker topics
 - **Cache Key Isolation**: Redis keys prefixed by broker for complete data separation
 - **StreamServiceBuilder Pattern**: Composition-based service orchestration with fluent API
-- **Protocol-Based Contracts**: Type-safe interfaces for service dependencies
+- **Protocol-Based Contracts**: Type-safe interfaces using `typing.Protocol` instead of ABCs
+- **Composition-First Design**: Modern strategy framework with protocol contracts
 - **Performance Optimizations**: O(1) instrument-to-strategy mappings for efficient routing
+- **Comprehensive Documentation**: Complete module-level documentation across all components
 
 ### 🏷️ Important Namespace Distinction
 
@@ -54,6 +56,14 @@ API Service (Read Path - Unified)
    - **Usage**: Creates Redis keys like `pipeline:signals:strategy_runner:count`
 
 **Key Point**: If you see `broker_namespace="strategy_runner"` in code, this is **correct** and different from the old `BROKER_NAMESPACE` env var that was removed.
+
+### 🤝 Multi‑Broker Operation (At a Glance)
+
+- **Strategies → Multiple Brokers**: Strategies generate signals per tick and fan‑out to all active brokers (e.g., `paper.signals.raw` and `zerodha.signals.raw`).
+- **Broker‑Scoped Trading**: `paper_trading` and `zerodha_trading` consume their own `{broker}.signals.validated` and emit `{broker}.orders.*` and `{broker}.pnl.snapshots`.
+- **Portfolios per Broker**: Portfolio/PnL snapshots are emitted per broker; Redis keys remain broker‑prefixed.
+- **Market Data Shared**: A single Zerodha feed publishes `market.ticks` for all brokers to keep strategy behavior consistent.
+- **Deprecation Notice**: Any architectures that steer behavior via a global `broker_namespace` are transitional and should be refactored to explicit per‑broker topic routing. The `broker_namespace` identifier remains only for metrics namespacing/compatibility and may be removed in a future cleanup.
 
 ## 🚀 Quick Start
 
@@ -84,6 +94,17 @@ make bootstrap  # Creates Redpanda topics with proper partitions
 make seed      # Seeds test strategies in database
 ```
 
+Environment-aware topic bootstrap (optional):
+
+```bash
+# Example: production-like overlays
+export SETTINGS__ENVIRONMENT=production
+export REDPANDA_BROKER_COUNT=3
+export TOPIC_PARTITIONS_MULTIPLIER=1.5
+export CREATE_DLQ_FOR_ALL=true
+make bootstrap
+```
+
 4. **Run Alpha Panda:**
 
 ```bash
@@ -96,34 +117,113 @@ make run  # Starts the complete trading pipeline
 make setup  # Complete first-time setup
 ```
 
-### 🧪 Quick Testing
+### 📈 Metrics (Prometheus)
+
+- API exposes Prometheus metrics at `/metrics`.
+- Example scrape target: `http://localhost:8000/metrics`
+- Install deps via `pip install -r requirements.txt -c constraints.txt` (includes `prometheus-client`).
+- DLQ counter: `trading_dlq_messages_total{service,broker}` increments when messages are sent to per-topic `.dlq`.
+
+### 📊 Grafana Dashboard
+
+- Import the ready dashboard JSON:
+  - `docs/observability/grafana/alpha_panda_prometheus_dashboard.json`
+- Optional: Consumer lag dashboard `docs/observability/grafana/consumer_lag_dashboard.json` (requires Kafka exporter).
+- Added panels for broker‑scoped trading services (events, DLQ) and inactivity/lag metrics.
+- Bind your Prometheus data source during import (input variable `DS_PROMETHEUS`).
+- See `docs/observability/CONSUMER_LAG.md` for setup and alert guidance.
+
+### 🛠️ Turnkey Observability (Prometheus + Kafka Exporter)
+
+Start Prometheus and Kafka exporter with docker compose profiles:
 
 ```bash
-# 1. Run unit tests (no infrastructure needed)
-python -m pytest tests/unit/ -v
+# Start Redpanda, Postgres, Redis (default)
+docker compose up -d
 
-# 2. Set up test infrastructure (health-gated)
-make test-setup
-
-# 3. Run infrastructure tests with isolated environment
-make test-with-env                 # Integration + E2E tests
-make test-performance-with-env     # Performance tests
-
-# 4. Clean up test environment
-make test-clean
+# Start observability stack (Prometheus UI at http://localhost:9090)
+docker compose --profile observability up -d
 ```
 
-## 🧪 New Production-Ready Testing Framework
+Prometheus scrapes:
+- Redpanda admin metrics at `redpanda:9644`
+- Kafka exporter metrics at `kafka-exporter:9308`
+- API metrics at `http://host.docker.internal:8000/metrics` (adjust host if needed on Linux)
 
-**Status**: ✅ **PRODUCTION-READY** | 🚀 **Real Infrastructure Integration** | ⚡ **Zero Mock Philosophy**
+See the full observability guide at `docs/observability/README.md`.
 
-Alpha Panda has been completely rebuilt with a **revolutionary testing framework** that uses **real infrastructure** to catch production issues that mocks cannot detect.
+### 📊 Grafana (One-click UI)
 
-### 🔥 **MAJOR TESTING OVERHAUL COMPLETE**
+Grafana is included under the `observability` profile and auto‑provisions:
+- A Prometheus datasource (http://prometheus:9090)
+- Dashboards loaded from `docs/observability/grafana`
 
-**What Changed**: Complete migration from mock-heavy testing to **real infrastructure integration testing**.
+Start Grafana:
 
-#### **✅ NEW: Real Infrastructure Testing**
+```bash
+docker compose --profile observability up -d grafana
+```
+
+Access UI: http://localhost:3000 (default admin/admin; change after first login)
+
+Tips:
+- If you modify dashboard JSONs, Grafana picks them up automatically (files are mounted read‑only to `/var/lib/grafana/dashboards`).
+- Ensure Prometheus is up before Grafana so the datasource is healthy.
+
+### ⚙️ Kafka Producer Tuning (optional)
+
+Per-service producer tuning is config-driven and disabled by default. You can enable light tuning for high‑throughput stages (e.g., `market_feed`) without code changes.
+
+Option A — JSON env (recommended for dict settings):
+
+```bash
+# Example: slightly lower linger and zstd compression for market_feed
+export PRODUCER_TUNING='{"market_feed": {"linger_ms": 2, "compression_type": "zstd"}}'
+```
+
+Option B — .env file (same JSON string):
+
+```
+PRODUCER_TUNING={"market_feed": {"linger_ms": 2, "compression_type": "zstd"}}
+```
+
+Notes:
+- Supported keys: `linger_ms`, `compression_type` (gzip|snappy|lz4|zstd), `batch_size`, `request_timeout_ms`, `max_in_flight_requests`.
+- You can also set a `default` profile applied to all producers unless overridden by service name.
+- Defaults remain unchanged unless you set overrides.
+
+### 🔎 Tracing (optional)
+
+- Feature‑flagged OpenTelemetry traces for Kafka producer/consumer and API.
+- Enable via env:
+  - `TRACING__ENABLED=true`
+  - `TRACING__EXPORTER=otlp`
+  - `TRACING__OTLP_ENDPOINT=http://localhost:4317`
+- See `docs/observability/TRACING.md` for details.
+
+### 📨 DLQ Replay (optional)
+
+Replay messages from per-topic DLQs back to their original topics (dry-run supported):
+
+```
+python scripts/dlq_replay.py --bootstrap localhost:9092 --dlq paper.signals.raw.dlq --group replay-tool --dry-run
+```
+
+Remove `--dry-run` to actually republish. Use `--limit` to cap messages.
+
+### 🧪 Testing
+
+Phase 1 focuses on fast, deterministic unit tests aligned with the multi‑broker architecture. Integration/E2E layers are optional and infra‑gated.
+
+Quick run (unit only):
+
+```bash
+pytest -q
+```
+
+Planned phases (opt‑in):
+- Phase 2: Integration tests (Kafka/Redis/Postgres) behind `make test-setup && make test-with-env`.
+- Phase 3: E2E smoke with broker fan‑out and DLQ metrics validation.
 - **Redis Integration**: Tests with actual Redis client (both decode_responses modes)
 - **Kafka Integration**: Real message serialization/deserialization with actual topics
 - **PostgreSQL Integration**: Actual database connections, transactions, and ACID compliance
@@ -278,6 +378,20 @@ redis-test: # Port 6380 (isolated from dev 6379)
   healthcheck: ['CMD', 'redis-cli', 'ping']
 ```
 
+### 📜 Schema Registry (Scaffolding)
+
+- Avro schemas are provided under `schemas/avro/` for core event types.
+- Register schemas to Redpanda Schema Registry (default http://localhost:8082):
+
+```bash
+python scripts/register_schemas.py
+python scripts/validate_schema_compatibility.py  # optional: checks vs latest
+```
+
+- Notes:
+  - Runtime still uses JSON; registry is introduced first for contract enforcement and CI checks.
+  - In CI, start registry via docker-compose, then run the above scripts.
+
 ### 🔍 Dependency Management (Python 3.13 Compatible)
 
 **Version Constraints (`constraints.txt`):**
@@ -431,8 +545,8 @@ alpha_panda/
 │   ├── market_feed/       # Market data ingestion (shared)
 │   ├── strategy_runner/   # Strategy execution (broker-segregated)
 │   ├── risk_manager/      # Risk validation (broker-segregated)
-│   ├── trading_engine/    # Order execution (broker-segregated)
-│   └── portfolio_manager/ # Portfolio state (broker-segregated)
+│   ├── paper_trading/     # Paper broker-scoped trading service
+│   └── zerodha_trading/   # Zerodha broker-scoped trading service
 ├── strategies/            # Pure trading strategy logic
 │   ├── base/             # BaseStrategy foundation components
 │   ├── legacy/           # Inheritance-based strategies (production active)
@@ -740,6 +854,23 @@ make bootstrap  # Create Redpanda topics manually
 make seed       # Seed database manually
 make down       # Stop infrastructure
 ```
+
+## 🧭 Logging & Observability Enhancements
+
+- JSON file logs and pretty console output via structlog ProcessorFormatter.
+- API access logs enriched with method, path, status, latency_ms, client IP, user agent,
+  and IDs (request_id, correlation_id) issued per request.
+- Non-blocking logging with QueueHandler/QueueListener; Prometheus metrics:
+  `alpha_panda_logging_queue_size`, `alpha_panda_logging_queue_capacity`,
+  `alpha_panda_logging_queue_dropped_total`.
+- Logging stats endpoint: `/api/v1/logs/stats` (queue size/capacity/drops, channel handlers, config).
+- Alert rules for queue drops/backpressure: `docs/observability/prometheus/logging_alerts.yml`
+- Channel-based files: `logs/api.log`, `logs/error.log`, `logs/database.log`, `logs/application.log`, `logs/market_data.log`, etc.
+
+### HTTP Request/Response IDs
+- Each HTTP request gets a unique `X-Request-ID`; the response echoes this value.
+- A `X-Correlation-ID` is ensured/propagated and included in responses.
+- Both IDs are embedded in structured logs and enriched API access logs for end-to-end tracing.
 
 ## 🔒 Security & Reliability
 

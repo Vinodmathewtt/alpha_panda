@@ -11,6 +11,7 @@ from core.schemas.topics import TopicNames, PartitioningKeys
 from core.config.settings import Settings, RedpandaSettings
 from core.logging import get_market_data_logger_safe, get_performance_logger_safe, get_error_logger_safe
 from core.monitoring import PipelineMetricsCollector
+from core.monitoring.prometheus_metrics import PrometheusMetricsCollector
 from services.auth.service import AuthService
 from services.instrument_data.instrument_registry_service import InstrumentRegistryService
 from services.instrument_data.csv_loader import InstrumentCSVLoader
@@ -33,6 +34,7 @@ class MarketFeedService:
         auth_service: AuthService,
         instrument_registry_service: InstrumentRegistryService,
         redis_client=None,
+        prometheus_metrics: PrometheusMetricsCollector | None = None,
     ):
         self.settings = settings
         self.auth_service = auth_service
@@ -49,9 +51,11 @@ class MarketFeedService:
         
         # Pipeline monitoring metrics
         self.ticks_processed = 0
+        self.ticks_received = 0
         self.last_tick_time = None
         # Market feed uses shared namespace since it serves all brokers
         self.metrics_collector = PipelineMetricsCollector(redis_client, settings, "market")
+        self.prom_metrics: PrometheusMetricsCollector | None = prometheus_metrics
         
         # Instrument subscription list
         self.instrument_tokens = []
@@ -69,6 +73,7 @@ class MarketFeedService:
             timeout=settings.reconnection.timeout_seconds
         )
         self._reconnection_attempts = 0
+        self._start_time = None
         
         # ADDED: Components for reliability
         self._reconnection_lock = asyncio.Lock()
@@ -80,12 +85,16 @@ class MarketFeedService:
         
         # Build streaming service using composition
         self.orchestrator = (StreamServiceBuilder("market_feed", config, settings)
+            .with_prometheus(prometheus_metrics)
             .with_redis(redis_client)
             .with_error_handling()
             .with_metrics()
             .add_producer()
             .build()
         )
+
+    def set_prometheus(self, prom: PrometheusMetricsCollector):
+        self.prom_metrics = prom
         
     async def _load_instruments_from_csv(self):
         """
@@ -135,6 +144,7 @@ class MarketFeedService:
             self._assign_callbacks()
             
             # FIXED: Set _running to True before starting the feed task
+            self._start_time = datetime.now(timezone.utc)
             self._running = True
             
             # ADDED: Start the tick processor worker
@@ -142,6 +152,13 @@ class MarketFeedService:
             
             self._feed_task = asyncio.create_task(self._run_feed())
             self.logger.info("✅ Market Feed Service started and is connecting to WebSocket.")
+            # Prometheus: mark healthy and connection status
+            if self.prom_metrics:
+                try:
+                    self.prom_metrics.set_pipeline_health("market_feed", "shared", True)
+                    self.prom_metrics.set_connection_status("zerodha_ws", "zerodha", True)
+                except Exception:
+                    pass
         except Exception as e:
             self.logger.error(f"❌ FATAL: Market Feed Service could not start: {e}")
             # Ensure _running is False on startup failure
@@ -173,6 +190,12 @@ class MarketFeedService:
             self.kws.close(1000, "Service shutting down")
         await self.orchestrator.stop()
         self.logger.info("✅ Market Feed Service stopped.")
+        if self.prom_metrics:
+            try:
+                self.prom_metrics.set_connection_status("zerodha_ws", "zerodha", False)
+                self.prom_metrics.set_pipeline_health("market_feed", "shared", False)
+            except Exception:
+                pass
     
     async def _tick_processor(self):
         """Worker task that consumes ticks from the queue and emits them."""
@@ -206,6 +229,12 @@ class MarketFeedService:
                     event_type=EventType.MARKET_TICK,
                     broker="shared"  # Market data is shared across all brokers
                 )
+                if self.prom_metrics:
+                    try:
+                        self.prom_metrics.record_event_processed("market_feed", "shared", EventType.MARKET_TICK.value)
+                        self.prom_metrics.record_market_tick("zerodha")
+                    except Exception:
+                        pass
         except Exception as e:
             self.error_logger.error(f"Failed to emit tick to Kafka: {e}", extra={"tick": tick.instrument_token})
             self._failed_sends += 1
@@ -300,6 +329,12 @@ class MarketFeedService:
         if not self._running:
             return
 
+        # Count received ticks regardless of processing outcome
+        try:
+            self.ticks_received += len(ticks)
+        except Exception:
+            pass
+
         for tick in ticks:
             try:
                 # Log data richness for first few ticks (debugging)
@@ -308,12 +343,12 @@ class MarketFeedService:
                     has_depth = 'depth' in tick and tick['depth'] is not None
                     has_ohlc = 'ohlc' in tick and tick['ohlc'] is not None
                     has_volume = 'volume_traded' in tick
-                    self.logger.info(f"🔍 Tick data richness - Fields: {len(available_fields)}, Depth: {has_depth}, OHLC: {has_ohlc}, Volume: {has_volume}")
+                    self.logger.debug(f"Tick data richness - Fields: {len(available_fields)}, Depth: {has_depth}, OHLC: {has_ohlc}, Volume: {has_volume}")
                     if has_depth:
                         depth = tick['depth']
                         buy_levels = len(depth.get('buy', []))
                         sell_levels = len(depth.get('sell', []))
-                        self.logger.info(f"📊 Market depth: {buy_levels} buy levels, {sell_levels} sell levels")
+                        self.logger.debug(f"Market depth: {buy_levels} buy levels, {sell_levels} sell levels")
                 
                 # Format complete tick data
                 formatted_tick = self.formatter.format_tick(tick)
@@ -322,12 +357,18 @@ class MarketFeedService:
                 # Update tick processing counter
                 self.ticks_processed += 1
 
-                # MODIFIED: Use a thread-safe queue for backpressure
+                # Thread-safe enqueue: KiteTicker callbacks run on a background thread.
+                # Use the event loop to safely schedule queue operations.
                 try:
-                    self._tick_queue.put_nowait(market_tick)
+                    if hasattr(self, 'loop') and self.loop is not None:
+                        self.loop.call_soon_threadsafe(self._tick_queue.put_nowait, market_tick)
+                    else:
+                        # Fallback (should not happen post-start); best effort enqueue
+                        self._tick_queue.put_nowait(market_tick)
                 except asyncio.QueueFull:
                     self._dropped_ticks += 1
-                    self.logger.warning(f"Tick queue is full. Dropping tick to maintain stability. Total dropped: {self._dropped_ticks}")
+                    self.logger.warning(
+                        f"Tick queue is full. Dropping tick to maintain stability. Total dropped: {self._dropped_ticks}")
                     
             except Exception as e:
                 self.logger.error(f"❌ Error processing tick: {tick}, Error: {e}")
@@ -371,7 +412,7 @@ class MarketFeedService:
         current_queue_size = self._tick_queue.qsize() if hasattr(self, '_tick_queue') else 0
         
         return {
-            'ticks_received': self.ticks_processed,
+            'ticks_received': self.ticks_received,
             'ticks_processed': self.ticks_processed,
             'ticks_dropped': self._dropped_ticks,
             'send_failures': self._failed_sends,
@@ -385,11 +426,11 @@ class MarketFeedService:
 
     def _calculate_processing_rate(self) -> float:
         """Calculate ticks per second processing rate."""
-        if not hasattr(self, '_start_time') or self.ticks_processed == 0:
+        if not self._start_time or self.ticks_processed == 0:
             return 0.0
         
-        # Use approximate elapsed time since service start
-        elapsed = 60.0  # Approximate for now
+        # Use precise elapsed time since service start
+        elapsed = (datetime.now(timezone.utc) - self._start_time).total_seconds()
         return self.ticks_processed / elapsed if elapsed > 0 else 0.0
 
     async def health_check(self) -> Dict[str, Any]:

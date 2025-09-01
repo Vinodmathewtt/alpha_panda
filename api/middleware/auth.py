@@ -2,9 +2,9 @@ from fastapi import Request, HTTPException, status
 from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware
 import time
-import logging
+from core.logging import get_api_logger_safe
 
-logger = logging.getLogger(__name__)
+logger = get_api_logger_safe("api.middleware.auth")
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
     """Enhanced authentication middleware with session management"""

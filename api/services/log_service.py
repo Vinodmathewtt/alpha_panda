@@ -24,7 +24,15 @@ class LogService:
         # For now, simulate logs
         logs = []
         
-        services = ["market_feed_service", "trading_engine_service", "portfolio_manager_service"]
+        services = [
+            "market_feed_service",
+            "paper_trading_service",
+            "zerodha_trading_service",
+            "strategy_runner_service",
+            "risk_manager_service",
+            "auth_service",
+            "api_service"
+        ]
         levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         
         for i in range(limit):
@@ -87,10 +95,12 @@ class LogService:
             },
             "by_service": {
                 "market_feed_service": total_entries * 0.25,
-                "trading_engine_service": total_entries * 0.30,
-                "portfolio_manager_service": total_entries * 0.20,
+                "paper_trading_service": total_entries * 0.25,
+                "zerodha_trading_service": total_entries * 0.15,
                 "strategy_runner_service": total_entries * 0.15,
-                "api_service": total_entries * 0.10
+                "risk_manager_service": total_entries * 0.10,
+                "auth_service": total_entries * 0.05,
+                "api_service": total_entries * 0.05
             },
             "recent_errors": 45,
             "time_range": {
@@ -103,8 +113,8 @@ class LogService:
         """Get list of available log services/sources"""
         return [
             "market_feed_service",
-            "trading_engine_service", 
-            "portfolio_manager_service",
+            "paper_trading_service",
+            "zerodha_trading_service",
             "strategy_runner_service",
             "risk_manager_service",
             "auth_service",
@@ -170,7 +180,13 @@ class LogService:
             results.append({
                 "timestamp": (datetime.utcnow() - timedelta(hours=random.randint(0, 48))).isoformat(),
                 "level": random.choice(["INFO", "WARNING", "ERROR"]),
-                "service": random.choice(["trading_engine_service", "market_feed_service"]),
+                "service": random.choice([
+                    "paper_trading_service",
+                    "zerodha_trading_service",
+                    "market_feed_service",
+                    "strategy_runner_service",
+                    "risk_manager_service",
+                ]),
                 "message": f"Log entry containing '{query}' - sample message {i}",
                 "details": {"search_highlight": query},
                 "correlation_id": str(uuid.uuid4())

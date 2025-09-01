@@ -1,0 +1,44 @@
+{
+  "type": "record",
+  "name": "MarketTick",
+  "namespace": "alpha.panda",
+  "fields": [
+    {"name": "instrument_token", "type": "long"},
+    {"name": "last_price", "type": "double"},
+    {"name": "timestamp", "type": "string"},
+    {"name": "symbol", "type": ["null", "string"], "default": null},
+
+    {"name": "volume_traded", "type": ["null", "long"], "default": null},
+    {"name": "last_traded_quantity", "type": ["null", "long"], "default": null},
+    {"name": "average_traded_price", "type": ["null", "double"], "default": null},
+    {"name": "total_buy_quantity", "type": ["null", "long"], "default": null},
+    {"name": "total_sell_quantity", "type": ["null", "long"], "default": null},
+    {"name": "change", "type": ["null", "double"], "default": null},
+
+    {"name": "ohlc", "type": [
+      "null",
+      {
+        "type": "record",
+        "name": "OHLCData",
+        "fields": [
+          {"name": "open", "type": "double"},
+          {"name": "high", "type": "double"},
+          {"name": "low", "type": "double"},
+          {"name": "close", "type": "double"}
+        ]
+      }
+    ], "default": null},
+
+    {"name": "oi", "type": ["null", "long"], "default": null},
+    {"name": "oi_day_high", "type": ["null", "long"], "default": null},
+    {"name": "oi_day_low", "type": ["null", "long"], "default": null},
+
+    {"name": "last_trade_time", "type": ["null", "string"], "default": null},
+    {"name": "exchange_timestamp", "type": ["null", "string"], "default": null},
+
+    {"name": "depth", "type": ["null", "string"], "default": null},
+    {"name": "mode", "type": ["null", "string"], "default": null},
+    {"name": "tradable", "type": ["null", "boolean"], "default": null}
+  ]
+}
+

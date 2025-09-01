@@ -85,7 +85,12 @@ class DashboardService:
     
     async def _get_broker_service_health(self, broker: str) -> Dict[str, Any]:
         """Get service-level health metrics for a specific broker"""
-        services = ["strategy_runner", "risk_manager", "trading_engine", "portfolio_manager"]
+        services = [
+            "strategy_runner",
+            "risk_manager",
+            "paper_trading",
+            "zerodha_trading",
+        ]
         service_health = {}
         
         for service in services:

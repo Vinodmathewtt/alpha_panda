@@ -20,8 +20,11 @@ class TopicNames:
     MARKET_TICKS_PAPER = "market.ticks"      # Points to same topic
     MARKET_TICKS_ZERODHA = "market.ticks"    # Points to same topic
     
-    # Dead Letter Queue for poison pill messages
-    DEAD_LETTER_QUEUE = "global.dead_letter_queue"
+    # Dead Letter Queue (DLQ)
+    # NOTE: Standard convention is per-topic DLQ using the ".dlq" suffix.
+    # The global DLQ constant remains for legacy reference but should not be
+    # used for new code paths.
+    DEAD_LETTER_QUEUE = "global.dead_letter_queue"  # DEPRECATED: prefer per-topic .dlq
     
     # Helper methods for market data topic selection
     @classmethod

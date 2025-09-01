@@ -4,6 +4,7 @@
 import asyncio
 from typing import List, Any, Dict
 from pydantic import BaseModel
+from typing import Optional, Dict, Any
 from abc import ABC, abstractmethod
 from sqlalchemy import text
 
@@ -25,6 +26,7 @@ class HealthCheckResult(BaseModel):
     component: str
     passed: bool
     message: str
+    details: Optional[Dict[str, Any]] = None
 
 class HealthCheck(ABC):
     """Abstract base class for a single health check."""

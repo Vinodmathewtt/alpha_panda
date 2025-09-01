@@ -22,7 +22,7 @@ from core.utils.exceptions import (
     StreamingError, MessageDeserializationError, ValidationError,
     is_retryable_error, get_retry_delay, create_error_context
 )
-from core.logging.enhanced_logging import get_error_logger_safe
+from core.logging import get_error_logger_safe
 
 logger = logging.getLogger(__name__)
 # Use dedicated error channel logger
@@ -209,13 +209,18 @@ class ErrorClassifier:
 class DLQPublisher:
     """Dead Letter Queue message publisher for failed message handling"""
     
-    def __init__(self, producer, service_name: str):
+    def __init__(self, producer, service_name: str, on_dlq: Optional[Callable[[str, Dict[str, Any]], Any]] = None):
         self.producer = producer
         self.service_name = service_name
+        self._on_dlq = on_dlq
         self._dlq_stats = {
             "messages_sent": 0,
             "errors": 0
         }
+
+    def set_on_dlq_callback(self, cb: Optional[Callable[[str, Dict[str, Any]], Any]]):
+        """Set or replace the DLQ notification callback."""
+        self._on_dlq = cb
     
     async def send_to_dlq(
         self, 
@@ -315,6 +320,17 @@ class DLQPublisher:
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 dlq_stats=self._dlq_stats
             )
+
+            # Notify optional callback for metrics
+            try:
+                if self._on_dlq:
+                    res = self._on_dlq(dlq_topic, dlq_event)
+                    # Support async callbacks
+                    if hasattr(res, "__await__"):
+                        await res
+            except Exception:
+                # Swallow callback errors to avoid impacting DLQ flow
+                pass
             
             return True
             

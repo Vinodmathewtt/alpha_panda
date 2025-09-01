@@ -1,7 +1,7 @@
 """Session management with PostgreSQL persistence following Alpha Panda patterns."""
 
 import asyncio
-import logging
+from core.logging import get_api_logger_safe
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -22,7 +22,7 @@ from .models import (
 )
 from .exceptions import SessionExpiredError, SessionNotFoundError
 
-logger = logging.getLogger(__name__)
+logger = get_api_logger_safe("auth_session_manager")
 
 
 class SessionManager:

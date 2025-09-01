@@ -1,243 +1,58 @@
-# Alpha Panda Testing Framework
+# Alpha Panda Testing
 
-**Status**: ✅ **PRODUCTION-READY TESTING** | 🚀 **Real Infrastructure Integration** | ⚡ **Zero Mock Philosophy**
+This repository uses a pragmatic, lightweight test strategy focused on high‑signal unit tests. Integration/E2E tests are deferred or infra‑gated and not collected by default.
 
-## Testing Philosophy and Policies
+## Scope
 
-**🎯 CORE PRINCIPLE**: Real infrastructure testing to catch production issues that mocks cannot detect.
+- Unit tests: Validate schemas, routing helpers, formatters, and critical producer semantics.
+- Integration/E2E: Optional and infra‑gated; directories are placeholders. Not collected by default.
 
-### Critical Testing Policies
-
-#### 1. **MANDATORY: Real Infrastructure First**
-- **Primary Rule**: Use actual Redis, Kafka, PostgreSQL for all integration tests
-- **Mock Usage**: ONLY for external APIs requiring credentials (Zerodha WebSocket during development)
-- **Rationale**: Mocks hide critical type conversion, serialization, and connection issues
-- **Implementation**: All services must be tested against real infrastructure components
-
-#### 2. **MANDATORY: Fail-Fast Validation**
-- **Zero Silent Failures**: Every error must be logged, alerted, or raise an exception
-- **Immediate Failure**: System must fail fast when critical dependencies are missing
-- **Observable Errors**: All failures must be detectable via logs, metrics, or exceptions
-- **No Fallback Data**: Never use hardcoded fallbacks for production data in tests
-
-#### 3. **MANDATORY: Production-Like Test Environment**
-- **Infrastructure Isolation**: Test infrastructure on separate ports (Redis 6380, Kafka 19092, PostgreSQL 5433)
-- **Real Data Flows**: Events must flow through actual Kafka topics with real serialization
-- **Authentic Conditions**: Test with real market data, actual Zerodha API responses, genuine error scenarios
-- **State Persistence**: Use real databases for configuration, real Redis for caching
-
-#### 4. **MANDATORY: Comprehensive Error Path Testing**
-- **DLQ Scenarios**: Test Dead Letter Queue with actual Kafka topics
-- **Connection Failures**: Test Redis/Kafka/PostgreSQL connection loss and recovery
-- **Resource Exhaustion**: Test memory limits, connection pool exhaustion
-- **Data Corruption**: Test malformed messages, serialization failures
-
-#### 5. **MANDATORY: Service Interface Validation**
-- **Method Existence**: Validate all service method calls exist before runtime
-- **Signature Compliance**: Verify method parameters match usage patterns
-- **Protocol Implementation**: Test that services implement required interfaces
-- **Type Safety**: Validate all type hints match actual function calls
-
-## New Testing Architecture
-
-### 3-Layer Testing Strategy
-
-#### Layer 1: Unit Tests (Core Component Validation)
-**Purpose**: Test individual components with real infrastructure
-- **Event Schema Validation**: EventEnvelope, OrderFilled, MarketData schemas
-- **Stream Processing Patterns**: Kafka producer/consumer with real serialization
-- **Service Interface Validation**: Method existence, signature compliance
-- **Redis Type Handling**: Both decode_responses=True/False modes
-
-#### Layer 2: Integration Tests (Service Interaction Validation) 
-**Purpose**: Test service interactions with real infrastructure
-- **Multi-Broker Topic Routing**: Real Kafka topics with broker namespacing
-- **Cache Isolation**: Redis key prefixing across brokers
-- **Database Transactions**: Real PostgreSQL with ACID compliance
-- **End-to-End Message Flow**: Events through complete infrastructure stack
-
-#### Layer 3: End-to-End Tests (Complete Pipeline Validation)
-**Purpose**: Test complete trading pipeline with real market data
-- **Zerodha Authentication**: Real API key/secret authentication
-- **Market Data Integration**: Live market feed through WebSocket
-- **Trading Pipeline**: Complete flow from market data to portfolio updates
-- **Safety Validation**: Paper trading enforcement, risk management
-
-## Test Infrastructure Requirements
-
-### Required Infrastructure Components
-
-| **Component** | **Test Port** | **Purpose** | **Docker Image** |
-|---------------|---------------|-------------|------------------|
-| Redis | 6380 | Cache testing, type conversion validation | `redis:7-alpine` |
-| Kafka | 19092 | Message streaming, serialization testing | `confluentinc/cp-kafka:7.4.0` |
-| Zookeeper | 2181 | Kafka coordination | `confluentinc/cp-zookeeper:7.4.0` |
-| PostgreSQL | 5433 | Database integration, transaction testing | `postgres:15-alpine` |
-
-### Infrastructure Setup Commands
+## Running Tests
 
 ```bash
-# Start test infrastructure
-docker compose -f docker-compose.test.yml up -d
-
-# Verify infrastructure health
-docker compose -f docker-compose.test.yml ps
-
-# Check service logs
-docker compose -f docker-compose.test.yml logs
-
-# Stop and cleanup
-docker compose -f docker-compose.test.yml down -v
+pytest -q
 ```
 
-### Infrastructure Health Validation
+Defaults are configured in `pytest.ini` to only collect tests under `tests/` and standard `test_*.py` patterns.
 
-```bash
-# Quick health check
-python -c "
-import asyncio
-from tests.fixtures.infrastructure_fixtures import InfrastructureHealthChecker
+## Covered Areas
 
-async def main():
-    health = await InfrastructureHealthChecker.check_all_services()
-    print('Infrastructure Health:', health)
-    
-asyncio.run(main())
-"
-```
+- Event schemas and enums (`tests/unit/test_event_schemas_v2.py`)
+- Event envelope child creation and trace inheritance (`tests/unit/test_event_envelope_child.py`)
+- Metrics keys and registry (`tests/unit/test_metrics_registry_v2.py`, `tests/unit/test_metrics_registry_keys.py`)
+- Market tick formatter (`tests/unit/test_market_tick_formatter.py`)
+- Topic routing and DLQ suffix helper (`tests/unit/test_topic_routing.py`)
+- Topic helpers and asset-class mapping (`tests/unit/test_topics_mapping_extras.py`)
+- Producer semantics (requires event_type for non‑market topics; defaults on market ticks) (`tests/unit/test_message_producer_semantics.py`)
+- Producer serialization of datetime/Decimal (`tests/unit/test_message_producer_serialization.py`)
+- Order event defaults and enum coercion (`tests/unit/test_order_event_defaults.py`)
 
-## Test Execution Strategy
+## Notes on Multi‑Broker
 
-### Development Testing Commands
+- Unit tests assert topic mapping and broker extraction, consistent with the multi‑broker architecture (`paper.*`, `zerodha.*`) and shared `market.ticks`.
 
-```bash
-# 1. Unit Tests - Core component validation
-python -m pytest tests/unit/ -v --tb=short
+## Deferred Layers (Optional)
 
-# 2. Integration Tests - Service interaction validation  
-python -m pytest tests/integration/ -v --tb=short
+- `tests/integration/`, `tests/e2e/`, `tests/performance/`, `tests/resilience/`, `tests/property_based/` are present as placeholders and may be populated when infra is available. Do not assume infra is running during unit tests.
+  - Note: these folders are intentionally omitted from source control until populated to keep the repo lean.
 
-# 3. End-to-End Tests - Complete pipeline validation
-# ⚠️  REQUIRES: ZERODHA_API_KEY, ZERODHA_API_SECRET, ZERODHA_ACCESS_TOKEN
-python -m pytest tests/e2e/ -v -s --tb=short
+## Contributing Tests
 
-# 4. Complete Test Suite
-python -m pytest tests/ -v --tb=short
+- Prefer asserting on Enums or `.value` explicitly when dealing with serialization.
+- Avoid network, external services, or file system side effects in unit tests.
+- If you add integration tests, gate them behind environment flags and mark them accordingly to keep unit test runs fast and deterministic.
 
-# 5. Fast Critical Path Tests (< 30 seconds)
-python -m pytest tests/unit/test_event_envelope_validation.py tests/unit/test_service_interfaces.py -v
-```
+## Roadmap (Progressive Plan)
 
-### Production Validation Commands
-
-```bash
-# Critical issue prevention (run before deployment)
-python -m pytest tests/unit/test_event_envelope_validation.py::TestEventTypeEnumCompleteness -v
-python -m pytest tests/unit/test_service_interfaces.py::TestServiceMethodValidation -v
-python -m pytest tests/integration/test_real_infrastructure_integration.py::TestRedisIntegrationPatterns -v
-
-# Infrastructure integration validation
-python -m pytest tests/integration/ -k "redis or kafka or postgres" -v
-
-# End-to-end safety validation
-python -m pytest tests/e2e/test_zerodha_real_trading_pipeline.py::TestRealTradingPipelineValidation::test_end_to_end_pipeline_safety_validation -v
-```
-
-## Critical Testing Patterns
-
-### 1. **Event Envelope Validation Pattern**
-```python
-def test_event_envelope_required_fields(self):
-    """Test that EventEnvelope enforces all required fields"""
-    envelope = EventEnvelope(
-        id=str(uuid4()),
-        type=EventType.ORDER_FILLED,
-        timestamp=datetime.now(),
-        source="trading_engine",
-        version="1.0",
-        correlation_id=str(uuid4()),
-        causation_id=str(uuid4()),
-        broker="zerodha",  # MANDATORY for routing
-        key="12345",       # MANDATORY for partitioning
-        data={"test": "data"}
-    )
-    assert envelope.broker in ["paper", "zerodha"]
-    assert envelope.type == EventType.ORDER_FILLED
-```
-
-### 2. **Real Infrastructure Integration Pattern**
-```python
-@pytest.mark.asyncio
-async def test_redis_cache_operations(self, redis_test_client):
-    """Test portfolio caching with real Redis client"""
-    broker = "zerodha"
-    balance_key = f"{broker}:portfolio:balance"
-    
-    # Test actual Redis operations
-    await redis_test_client.set(balance_key, "150000.50")
-    balance = await redis_test_client.get(balance_key)
-    
-    assert balance == "150000.50"
-    assert isinstance(balance, str)  # Validates decode_responses=True
-```
-
-### 3. **Kafka Message Flow Pattern**
-```python
-async def test_multi_broker_topic_routing(self, kafka_producer, kafka_consumer):
-    """Test broker-specific topic routing with real Kafka"""
-    paper_topic = "paper.signals.validated"
-    zerodha_topic = "zerodha.signals.validated"
-    
-    await kafka_consumer.subscribe([paper_topic, zerodha_topic])
-    
-    # Send to different broker topics
-    await kafka_producer.send(topic=paper_topic, value=paper_signal, key=b"12345")
-    await kafka_producer.send(topic=zerodha_topic, value=zerodha_signal, key=b"12345")
-    
-    # Verify routing works correctly
-    messages = await consume_messages(kafka_consumer, expected_count=2)
-    assert any(msg.topic == paper_topic for msg in messages)
-    assert any(msg.topic == zerodha_topic for msg in messages)
-```
-
-### 4. **Service Interface Validation Pattern**
-```python
-def test_service_method_exists(self):
-    """Test that called service methods actually exist"""
-    assert hasattr(TradingEngineService, 'execute_signal')
-    execute_signal = getattr(TradingEngineService, 'execute_signal')
-    assert callable(execute_signal)
-    assert inspect.iscoroutinefunction(execute_signal)
-```
-
-### 5. **Zerodha Real Data Integration Pattern**
-```python
-async def test_strategy_with_real_market_data(self, kite_client):
-    """Test strategy processing with real Zerodha market data"""
-    # Get real historical data
-    historical_data = kite_client.historical_data(
-        instrument_token=12345,
-        from_date=start_date,
-        to_date=end_date,
-        interval='5minute'
-    )
-    
-    # Process with real strategy logic
-    prices = [Decimal(str(candle['close'])) for candle in historical_data[-10:]]
-    signal = generate_momentum_signal(prices)
-    
-    # Validate signal with real market conditions
-    assert signal.price > 0
-    assert isinstance(signal.price, Decimal)
-    assert signal.confidence <= 1.0
-```
-
-## Safety Enforcement Policies
-
-### 1. **MANDATORY: Paper Trading Enforcement**
-- **Default Mode**: All tests run in paper trading mode
-- **Live Trading Block**: Tests must validate that live trading is disabled
-- **Credential Isolation**: Market data credentials separate from trading credentials
+- Phase 1 (complete)
+  - Core schemas, topics, formatter, producer semantics, serialization, envelope lineage
+- Phase 2 (optional)
+  - Pipeline metrics Redis integration using a local fake client
+  - DLQ emission path unit tests with in-memory producer fakes
+- Phase 3 (optional/infra)
+  - Kafka/Redis integration: topic fan-out and per-broker processing
+  - E2E smoke: strategy → risk → trading → portfolio with metrics assertions
+  - Performance smoke: basic throughput and latency sampling
 - **Safety Checks**: Multiple validation layers prevent accidental live trading
 
 ### 2. **MANDATORY: Infrastructure Isolation**

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 
-from services.portfolio_manager.cache import PortfolioCache
-from services.portfolio_manager.models import Portfolio
+from core.trading.portfolio_cache import PortfolioCache
+from core.trading.portfolio_models import Portfolio
 from api.dependencies import get_portfolio_cache, get_current_user
 
 router = APIRouter(

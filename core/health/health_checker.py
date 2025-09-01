@@ -143,6 +143,16 @@ class ServiceHealthChecker:
             )
         
         # Kafka/Redpanda health checks
+        # Runtime compatibility check (does not require instantiated clients)
+        self.health_checks.append(
+            HealthCheck(
+                name="kafka_runtime_compatibility",
+                component="streaming",
+                check_function=self._check_kafka_runtime_compatibility,
+                critical=True,
+            )
+        )
+
         if self.kafka_producer or self.kafka_consumer:
             self.health_checks.extend([
                 HealthCheck(
@@ -907,6 +917,61 @@ class ServiceHealthChecker:
                 "status": "unknown",
                 "message": f"Order flow check failed: {str(e)}"
             }
+
+    async def _check_kafka_runtime_compatibility(self) -> Dict[str, Any]:
+        """Validate aiokafka/Python runtime compatibility and config readiness.
+
+        This does not attempt a network connection; connectivity is checked by
+        producer/consumer health checks when configured.
+        """
+        import sys
+        try:
+            import aiokafka  # type: ignore
+            version_str = getattr(aiokafka, "__version__", "0.0.0")
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "message": f"aiokafka not importable: {e}",
+                "details": {"python": sys.version},
+            }
+
+        py_major, py_minor = sys.version_info[:2]
+
+        def parse_ver(s: str):
+            parts = s.split(".")
+            try:
+                return tuple(int(p) for p in parts[:3] + [0] * (3 - len(parts)))
+            except Exception:
+                return (0, 0, 0)
+
+        ak_ver = parse_ver(version_str)
+        min_required_for_py313 = (0, 12, 0)
+
+        status = "healthy"
+        msg = f"aiokafka {version_str} on Python {py_major}.{py_minor}"
+        details = {"aiokafka_version": version_str, "python": f"{py_major}.{py_minor}"}
+
+        if (py_major, py_minor) >= (3, 13) and ak_ver < min_required_for_py313:
+            status = "unhealthy"
+            msg = (
+                f"aiokafka {version_str} may not support Python {py_major}.{py_minor}. "
+                f"Require >= {'.'.join(map(str, min_required_for_py313))}."
+            )
+
+        # Basic config sanity
+        try:
+            bs = self.settings.redpanda.bootstrap_servers
+            if not bs or bs.strip() == "":
+                if status == "healthy":
+                    status = "degraded"
+                details["bootstrap_servers"] = "missing"
+                msg += ", bootstrap_servers not configured"
+            else:
+                details["bootstrap_servers"] = bs
+        except Exception:
+            pass
+
+        return {"status": status, "message": msg, "details": details}
     
     async def _check_zerodha_auth_health(self) -> Dict[str, Any]:
         """Check Zerodha authentication health - CRITICAL for all operations."""

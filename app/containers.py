@@ -13,6 +13,7 @@ from core.health import (
     RedpandaHealthCheck,
     ZerodhaAuthenticationCheck,
 )
+from core.health.multi_broker_health_checks import BrokerTopicHealthCheck
 # Import the new custom checks
 from app.pre_trading_checks import (
     ActiveStrategiesCheck,
@@ -22,11 +23,9 @@ from app.pre_trading_checks import (
 from services.market_feed.service import MarketFeedService
 from services.strategy_runner.service import StrategyRunnerService  
 from services.risk_manager.service import RiskManagerService
-from services.trading_engine.service import TradingEngineService
-from services.trading_engine.traders.trader_factory import TraderFactory
-from services.trading_engine.routing.execution_router import ExecutionRouter
-from services.portfolio_manager.service import PortfolioManagerService
-from services.portfolio_manager.cache import PortfolioCache
+from core.trading.portfolio_cache import PortfolioCache
+from services.zerodha_trading.service import ZerodhaTradingService
+from services.paper_trading.service import PaperTradingService
 from services.auth.service import AuthService
 from services.instrument_data.instrument_registry_service import InstrumentRegistryService
 from core.monitoring import PipelineMonitor
@@ -35,6 +34,8 @@ from core.health.health_checker import ServiceHealthChecker
 from api.services.dashboard_service import DashboardService
 from api.services.log_service import LogService
 import redis.asyncio as redis
+from prometheus_client import CollectorRegistry
+from core.monitoring.prometheus_metrics import PrometheusMetricsCollector
 
 
 class AppContainer(containers.DeclarativeContainer):
@@ -42,6 +43,15 @@ class AppContainer(containers.DeclarativeContainer):
     
     # Configuration
     settings = providers.Singleton(Settings)
+
+    # --- Observability: Prometheus ---
+    # Define Prometheus providers early so downstream providers can reference them
+    # Shared registry used by API /metrics endpoint and collectors
+    prometheus_registry = providers.Singleton(CollectorRegistry)
+    prometheus_metrics = providers.Singleton(
+        PrometheusMetricsCollector,
+        registry=prometheus_registry,
+    )
     
     # Database with environment awareness
     db_manager = providers.Singleton(
@@ -90,7 +100,8 @@ class AppContainer(containers.DeclarativeContainer):
         settings=settings,
         auth_service=auth_service,
         instrument_registry_service=instrument_registry_service,
-        redis_client=redis_client
+        redis_client=redis_client,
+        prometheus_metrics=prometheus_metrics
     )
     
     # Strategy Runner Service
@@ -100,7 +111,8 @@ class AppContainer(containers.DeclarativeContainer):
         settings=settings,
         db_manager=db_manager,
         redis_client=redis_client,
-        market_hours_checker=market_hours_checker
+        market_hours_checker=market_hours_checker,
+        prometheus_metrics=prometheus_metrics
     )
     
     # Risk Manager Service
@@ -108,47 +120,30 @@ class AppContainer(containers.DeclarativeContainer):
         RiskManagerService,
         config=settings.provided.redpanda,
         settings=settings,
-        redis_client=redis_client
+        redis_client=redis_client,
+        prometheus_metrics=prometheus_metrics
     )
     
-    # Shared producer for trading engine
-    trading_producer = providers.Singleton(
-        RedpandaProducer,
-        config=settings.provided.redpanda
-    )
-    
-    # Trading Engine Service components (using composition)
-    trader_factory = providers.Singleton(
-        TraderFactory,
-        settings=settings,
-        instrument_service=instrument_registry_service
-    )
-    
-    execution_router = providers.Singleton(
-        ExecutionRouter,
-        settings=settings,
-        db_manager=db_manager
-    )
-    
-    # Trading Engine Service
-    trading_engine_service = providers.Singleton(
-        TradingEngineService,
+    # Legacy trading engine providers removed in Phase 6 cleanup
+
+    # New broker-scoped services (Phase 3 wiring)
+    zerodha_trading_service = providers.Singleton(
+        ZerodhaTradingService,
         config=settings.provided.redpanda,
         settings=settings,
         redis_client=redis_client,
-        trader_factory=trader_factory,
-        execution_router=execution_router,
-        market_hours_checker=market_hours_checker
+        prometheus_metrics=prometheus_metrics,
     )
-    
-    # Portfolio Manager Service
-    portfolio_manager_service = providers.Singleton(
-        PortfolioManagerService,
+
+    paper_trading_service = providers.Singleton(
+        PaperTradingService,
         config=settings.provided.redpanda,
         settings=settings,
         redis_client=redis_client,
-        db_manager=db_manager
+        prometheus_metrics=prometheus_metrics,
     )
+
+    # Legacy portfolio manager provider removed in Phase 6 cleanup
     
     # Pipeline Monitor Service
     pipeline_monitor = providers.Singleton(
@@ -163,6 +158,7 @@ class AppContainer(containers.DeclarativeContainer):
     db_health_check = providers.Singleton(DatabaseHealthCheck, db_manager=db_manager)
     redis_health_check = providers.Singleton(RedisHealthCheck, redis_client=redis_client)
     redpanda_health_check = providers.Singleton(RedpandaHealthCheck, settings=settings)
+    broker_topics_check = providers.Singleton(BrokerTopicHealthCheck, settings=settings)
 
     # Configuration and Logic Checks
     zerodha_auth_check = providers.Singleton(ZerodhaAuthenticationCheck, auth_service=auth_service)
@@ -178,6 +174,7 @@ class AppContainer(containers.DeclarativeContainer):
         db_health_check,
         redis_health_check,
         redpanda_health_check,
+        broker_topics_check,
         # Config & Logic
         active_strategies_check,
         broker_api_check,
@@ -218,9 +215,11 @@ class AppContainer(containers.DeclarativeContainer):
         auth_service,
         instrument_registry_service,  # Added for proper lifecycle management
         market_feed_service,
-        strategy_runner_service, 
+        strategy_runner_service,
         risk_manager_service,
-        trading_engine_service,
-        portfolio_manager_service,
-        pipeline_monitor
+        # Phase 3 cutover: start broker-scoped trading services
+        paper_trading_service,
+        zerodha_trading_service,
+        # Do not start old trading_engine/portfolio_manager to avoid double-processing
+        pipeline_monitor,
     )

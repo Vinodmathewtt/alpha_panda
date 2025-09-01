@@ -22,11 +22,14 @@ All event topics are prefixed by broker namespace to ensure hard segregation:
 **Topic Naming Convention**: `{broker}.{domain}.{event_type}[.dlq]`
 
 **Examples**:
-- **Paper Topics**: `paper.market.ticks`, `paper.signals.raw`, `paper.signals.validated`, `paper.orders.submitted`, `paper.orders.filled`, `paper.pnl.snapshots`
-- **Zerodha Topics**: `zerodha.market.ticks`, `zerodha.signals.raw`, `zerodha.signals.validated`, `zerodha.orders.submitted`, `zerodha.orders.filled`, `zerodha.pnl.snapshots`
+- **Market Data (shared)**: `market.ticks`
+- **Paper Topics**: `paper.signals.raw`, `paper.signals.validated`, `paper.orders.submitted`, `paper.orders.filled`, `paper.pnl.snapshots`
+- **Zerodha Topics**: `zerodha.signals.raw`, `zerodha.signals.validated`, `zerodha.orders.submitted`, `zerodha.orders.filled`, `zerodha.pnl.snapshots`
 - **Dead Letter Queues**: `paper.orders.filled.dlq`, `zerodha.signals.validated.dlq`
 
-**📊 Market Data Exception**: Only shared resource is `market.ticks` topic since both brokers use same Zerodha source for market data.
+**📊 Market Data Exception**: Market data uses a single shared `market.ticks` topic (single Zerodha feed) for both brokers.
+
+> Note on legacy namespacing: historical references to a single `broker_namespace` driving runtime behavior are deprecated. Routing must be derived from the topic broker prefix. The `broker_namespace` label is retained only for metrics namespacing/compatibility and should be phased out in favor of explicit `broker`/`broker_context` usage.
 
 ### 3. Cache Key Isolation
 
@@ -86,8 +89,8 @@ Single service instances handle all active brokers with topic-aware message rout
 
 **Unified Services Process All Brokers**:
 - **Risk Manager**: Consumes from all `{broker}.signals.raw` topics → publishes to appropriate `{broker}.signals.validated`
-- **Trading Engine**: Consumes from all `{broker}.signals.validated` topics → routes to PaperTrader or ZerodhaTrader based on topic broker → publishes to `{broker}.orders.filled`
-- **Portfolio Manager**: Consumes from all `{broker}.orders.filled` topics → updates broker-specific cache keys (`{broker}:portfolio:*`)
+- **Paper Trading (broker-scoped)**: Consumes `paper.signals.validated` → emits paper order lifecycle `paper.orders.*` and `paper.pnl.snapshots`
+- **Zerodha Trading (broker-scoped)**: Consumes `zerodha.signals.validated` → emits zerodha order lifecycle `zerodha.orders.*` and `zerodha.pnl.snapshots`
 
 **Topic-Aware Message Handlers**:
 All handlers receive `(message, topic)` parameters and extract broker context from topic names for proper routing.
@@ -101,8 +104,8 @@ All handlers receive `(message, topic)` parameters and extract broker context fr
 ### Multi-Broker Services (Single instance handling multiple brokers)
 - **Strategy Runner Service**: Fans out signals to all `settings.active_brokers` topics
 - **Risk Manager Service**: Topic-aware handlers validate signals for all active brokers
-- **Trading Engine Service**: Topic-aware routing to PaperTrader vs ZerodhaTrader based on message topic
-- **Portfolio Manager Service**: Maintains separate portfolio state per broker using prefixed cache keys
+- **Paper Trading Service**: Broker-scoped trading for `paper.*` topics
+- **Zerodha Trading Service**: Broker-scoped trading for `zerodha.*` topics
 
 ## Configuration Management
 
@@ -171,7 +174,7 @@ GET /api/v1/portfolios/all/summary       # Aggregated view
 The architecture scales easily to support additional brokers:
 
 1. **Add Broker Support**: Add `'alpaca'` to supported brokers in settings validation
-2. **Implement Trader**: Create `AlpacaTrader` class in Trading Engine
+2. **Implement Trading Service**: Create broker-scoped trading service for the new broker
 3. **Update Configuration**: Set `ACTIVE_BROKERS=paper,zerodha,alpaca`
 4. **Topic Routing**: Services automatically handle `alpaca.*` topics
 5. **Update Dashboard**: Add alpaca-specific API endpoints

@@ -1,0 +1,31 @@
+{
+  "title": "Alpha Panda - Consumer Lag",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "Consumer Lag by Group",
+      "targets": [
+        {
+          "expr": "sum(kafka_consumergroup_lag) by (consumergroup)",
+          "legendFormat": "{{consumergroup}}"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "Consumer Lag by Topic",
+      "targets": [
+        {
+          "expr": "sum(kafka_consumergroup_lag) by (topic)",
+          "legendFormat": "{{topic}}"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 8, "w": 24, "h": 8}
+    }
+  ],
+  "schemaVersion": 36,
+  "version": 1
+}
+

@@ -3,9 +3,9 @@
 from kiteconnect import KiteTicker
 from core.config.settings import Settings
 from services.auth.service import AuthService
-import logging
+from core.logging import get_api_logger_safe
 
-logger = logging.getLogger(__name__)
+logger = get_api_logger_safe("market_feed_auth")
 
 class BrokerAuthenticator:
     """

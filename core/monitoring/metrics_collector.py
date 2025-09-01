@@ -7,14 +7,14 @@ import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Set
-import logging
+from core.logging import get_monitoring_logger_safe
 import json
 from dataclasses import dataclass, field
 from collections import defaultdict, deque
 
 from .alerting import get_alert_manager, AlertSeverity, AlertCategory
 
-logger = logging.getLogger(__name__)
+logger = get_monitoring_logger_safe("metrics_collector")
 
 
 @dataclass
@@ -194,7 +194,13 @@ class MetricsCollector:
         # 4. Aggregate system-level metrics
         
         # For now, simulate collecting metrics from known services
-        service_names = ["market_feed", "strategy_runner", "risk_manager", "trading_engine", "portfolio_manager"]
+        service_names = [
+            "market_feed",
+            "strategy_runner",
+            "risk_manager",
+            "paper_trading",
+            "zerodha_trading",
+        ]
         
         for service_name in service_names:
             try:
@@ -235,7 +241,14 @@ class MetricsCollector:
     
     def _update_service_metrics(self, service_name: str, metrics_data: Dict[str, Any]):
         """Update service metrics from collected data"""
-        broker_namespace = metrics_data.get("broker_namespace", "unknown")
+        # Modernize: accept explicit broker/context keys, fallback to legacy key
+        broker_namespace = (
+            metrics_data.get("broker")
+            or metrics_data.get("broker_context")
+            or metrics_data.get("namespace")
+            or metrics_data.get("broker_namespace")
+            or "unknown"
+        )
         
         if service_name not in self.services:
             self.services[service_name] = ServiceMetrics(
@@ -270,9 +283,11 @@ class MetricsCollector:
     def _create_default_service_metrics(self, service_name: str):
         """Create default/placeholder metrics for a service"""
         if service_name not in self.services:
+            # Prefer explicit, sensible defaults; avoid deprecated settings.broker_namespace
+            default_broker = 'shared' if service_name == 'market_feed' else 'unknown'
             self.services[service_name] = ServiceMetrics(
                 service_name=service_name,
-                broker_namespace=getattr(self.settings, 'broker_namespace', 'unknown') if self.settings else 'unknown'
+                broker_namespace=default_broker
             )
         
         # Mark as potentially offline

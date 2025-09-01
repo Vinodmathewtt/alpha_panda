@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "PnlSnapshot",
+  "namespace": "alpha.panda",
+  "fields": [
+    {"name": "broker", "type": "string"},
+    {"name": "instrument_token", "type": ["null", "long"], "default": null},
+    {"name": "realized_pnl", "type": "double"},
+    {"name": "unrealized_pnl", "type": "double"},
+    {"name": "total_pnl", "type": "double"},
+    {"name": "timestamp", "type": "string"}
+  ]
+}
+

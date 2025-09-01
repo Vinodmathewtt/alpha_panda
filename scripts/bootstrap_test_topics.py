@@ -36,6 +36,10 @@ TEST_TOPICS = {
     "zerodha.orders.submitted": {"partitions": 3, "replication_factor": 1},
     "zerodha.orders.filled": {"partitions": 3, "replication_factor": 1},
     "zerodha.orders.failed": {"partitions": 3, "replication_factor": 1},
+
+    # PnL snapshots (per broker)
+    "paper.pnl.snapshots": {"partitions": 3, "replication_factor": 1},
+    "zerodha.pnl.snapshots": {"partitions": 3, "replication_factor": 1},
     
     # Dead letter queue topics
     "paper.signals.raw.dlq": {"partitions": 1, "replication_factor": 1},

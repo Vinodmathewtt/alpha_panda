@@ -86,6 +86,22 @@ class PrometheusMetricsCollector:
             ['connection_type', 'broker'],
             registry=self.registry
         )
+
+        # DLQ metrics
+        self.dlq_messages = Counter(
+            'trading_dlq_messages_total',
+            'Total messages sent to Dead Letter Queues',
+            ['service', 'broker'],
+            registry=self.registry
+        )
+
+        # Activity timestamps (unix seconds) for inactivity alerts/panels
+        self.last_activity_timestamp = Gauge(
+            'trading_last_activity_timestamp_unix',
+            'Last activity timestamp (unix seconds) by service/stage/broker',
+            ['service', 'stage', 'broker'],
+            registry=self.registry
+        )
         
         # Cache metrics
         self.cache_hits = Counter(
@@ -145,6 +161,17 @@ class PrometheusMetricsCollector:
     def record_cache_miss(self, cache_type: str):
         """Record cache miss"""
         self.cache_misses.labels(cache_type=cache_type).inc()
+
+    def record_dlq_message(self, service: str, broker: str):
+        """Record a message sent to DLQ for a service/broker."""
+        self.dlq_messages.labels(service=service, broker=broker).inc()
+
+    def set_last_activity(self, service: str, stage: str, broker: str):
+        """Set last activity timestamp for a service/stage/broker to now (unix seconds)."""
+        try:
+            self.last_activity_timestamp.labels(service=service, stage=stage, broker=broker).set(time.time())
+        except Exception:
+            pass
 
 
 class MetricsContextManager:

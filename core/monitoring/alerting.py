@@ -4,14 +4,14 @@ Provides hooks for external alerting systems (email, Slack, PagerDuty, etc.)
 """
 
 import asyncio
-import logging
+from core.logging import get_monitoring_logger_safe
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
 
-logger = logging.getLogger(__name__)
+logger = get_monitoring_logger_safe("alerting")
 
 
 class AlertSeverity(str, Enum):
@@ -100,7 +100,7 @@ class LoggingChannel(AlertChannel):
     """Simple logging-based alert channel"""
     
     def __init__(self, logger_name: str = "alerts"):
-        self.logger = logging.getLogger(logger_name)
+        self.logger = get_monitoring_logger_safe(logger_name)
     
     async def send_alert(self, alert: Alert) -> bool:
         """Log alert message"""

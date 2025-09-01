@@ -6,6 +6,7 @@ from .deduplication_manager import DeduplicationManager
 from .error_handler import ErrorHandler  
 from .metrics_collector import MetricsCollector
 from ..correlation import CorrelationContext, CorrelationLogger
+from ...observability.tracing import get_tracer, extract_headers
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,14 @@ class ReliabilityLayer:
         # Extract broker from topic for enhanced logging
         broker = topic.split('.')[0] if '.' in topic else 'unknown'
         
-        # 1. Set up correlation context with broker information
+        # 1. Set up correlation context with broker information and tracing context
+        headers = raw_message.get('headers') or {}
+        try:
+            extract_headers(headers)
+        except Exception:
+            pass
+        tracer = get_tracer(self.service_name)
+
         if correlation_id:
             CorrelationContext.continue_trace(
                 correlation_id, event_id, self.service_name, 
@@ -61,8 +69,21 @@ class ReliabilityLayer:
         # 3. Process with error handling and metrics
         start_time = datetime.now(timezone.utc)
         try:
-            # Execute business logic with topic context
-            await self.handler_func(message_value, topic)
+            # Execute business logic within a consumer span
+            with tracer.start_as_current_span("kafka.consume") as span:
+                try:
+                    span.set_attribute("messaging.system", "kafka")
+                    span.set_attribute("messaging.source", topic)
+                    span.set_attribute("messaging.operation", "process")
+                    span.set_attribute("broker", broker)
+                    if event_id:
+                        span.set_attribute("event.id", event_id)
+                    if message_value.get('type'):
+                        span.set_attribute("event.type", str(message_value.get('type')))
+                except Exception:
+                    pass
+
+                await self.handler_func(message_value, topic)
             
             # Commit and mark as processed
             await self.consumer.commit(raw_message)

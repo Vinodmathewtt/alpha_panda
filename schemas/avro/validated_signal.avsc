@@ -1,0 +1,26 @@
+{
+  "type": "record",
+  "name": "ValidatedSignal",
+  "namespace": "alpha.panda",
+  "fields": [
+    {"name": "original_signal", "type": {
+      "type": "record",
+      "name": "OriginalTradingSignal",
+      "fields": [
+        {"name": "strategy_id", "type": "string"},
+        {"name": "instrument_token", "type": "long"},
+        {"name": "signal_type", "type": "string"},
+        {"name": "quantity", "type": "int"},
+        {"name": "price", "type": ["null", "double"], "default": null},
+        {"name": "timestamp", "type": "string"},
+        {"name": "confidence", "type": ["null", "double"], "default": null},
+        {"name": "metadata", "type": ["null", "string"], "default": null}
+      ]
+    }},
+    {"name": "validated_quantity", "type": "int"},
+    {"name": "validated_price", "type": ["null", "double"], "default": null},
+    {"name": "risk_checks", "type": ["null", "string"], "default": null},
+    {"name": "timestamp", "type": "string"}
+  ]
+}
+

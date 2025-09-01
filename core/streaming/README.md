@@ -93,6 +93,13 @@ orchestrator = (StreamServiceBuilder("my-service", config, settings)
 
 **Multi-Broker Architecture**: All streaming components support the multi-broker architecture with topic-aware handlers and broker context extraction.
 
+### Producer Envelope Rules (MessageProducer)
+- Automatic wrapping: `MessageProducer.send()` wraps payloads into `EventEnvelope` when a raw dict is provided.
+- Event type defaulting: Only defaults to `market_tick` when producing to the shared `market.ticks` topic. For all other topics, pass `event_type` explicitly (recommended) or include a valid `type` field in the payload.
+- Broker field: Always pass the `broker` argument for auditing in the envelope; routing is derived from the topic name, not this field.
+- Partition keys: Provide a stable string key. Prefer helpers in `core/schemas/topics.PartitioningKeys` for consistency.
+- Tracing headers: Trace/correlation IDs are injected into Kafka headers automatically.
+
 ## Dependencies
 
 - **aiokafka**: Async Kafka client

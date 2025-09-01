@@ -33,8 +33,10 @@
                         <option value="market_feed">Market Feed</option>
                         <option value="strategy_runner">Strategy Runner</option>
                         <option value="risk_manager">Risk Manager</option>
-                        <option value="trading_engine">Trading Engine</option>
-                        <option value="portfolio_manager">Portfolio Manager</option>
+                        <option value="paper_trading">Paper Trading</option>
+                        <option value="zerodha_trading">Zerodha Trading</option>
+                        <option value="paper_trading">Paper Trading</option>
+                        <option value="zerodha_trading">Zerodha Trading</option>
                         <option value="api">API</option>
                         <option value="dashboard">Dashboard</option>
                     </select>
@@ -313,7 +315,7 @@ function logViewer() {
         
         generateMockLogs(count) {
             const logs = [];
-            const services = ['market_feed', 'strategy_runner', 'risk_manager', 'trading_engine', 'portfolio_manager', 'api', 'dashboard'];
+            const services = ['market_feed', 'strategy_runner', 'risk_manager', 'paper_trading', 'zerodha_trading', 'api', 'dashboard'];
             const levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'];
             const messages = [
                 'Service started successfully',
@@ -357,7 +359,7 @@ function logViewer() {
         },
         
         generateRandomLogEntry() {
-            const services = ['market_feed', 'strategy_runner', 'risk_manager', 'trading_engine', 'portfolio_manager', 'api'];
+            const services = ['market_feed', 'strategy_runner', 'risk_manager', 'paper_trading', 'zerodha_trading', 'api'];
             const levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR'];
             const levelWeights = [0.3, 0.5, 0.15, 0.05]; // More info, fewer errors
             

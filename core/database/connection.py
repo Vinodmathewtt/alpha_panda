@@ -7,10 +7,10 @@ from sqlalchemy import text, event
 from contextlib import asynccontextmanager
 from typing import AsyncContextManager
 
-from core.logging.enhanced_logging import (
+from core.logging import (
     get_database_logger_safe,
     get_error_logger_safe,
-    get_performance_logger_safe
+    get_performance_logger_safe,
 )
 
 logger = logging.getLogger(__name__)

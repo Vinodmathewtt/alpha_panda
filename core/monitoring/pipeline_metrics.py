@@ -41,9 +41,8 @@ class PipelineMetricsCollector:
         try:
             timestamp = datetime.utcnow().isoformat()
             
-            # Increment count
+            # Increment count and set last info in a single pipeline
             count_key = MetricsRegistry.market_ticks_count()
-            tick_count = await self.redis.incr(count_key)
             
             # Store last tick info
             last_key = MetricsRegistry.market_ticks_last()
@@ -51,11 +50,14 @@ class PipelineMetricsCollector:
                 "timestamp": timestamp,
                 "symbol": tick_data.get("symbol"),
                 "instrument_token": tick_data.get("instrument_token"),
-                "last_price": tick_data.get("last_price"),
-                "tick_count": tick_count
+                "last_price": tick_data.get("last_price")
             }
             
-            await self.redis.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            pipe = self.redis.pipeline(transaction=False)
+            pipe.incr(count_key)
+            pipe.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            res = await pipe.execute()
+            tick_count = int(res[0]) if res and len(res) > 0 else 0
             
             self.logger.debug("Market tick recorded", 
                             instrument_token=tick_data.get("instrument_token"),
@@ -67,134 +69,156 @@ class PipelineMetricsCollector:
                             error=str(e),
                             broker=self.broker_namespace)
         
-    async def record_signal_generated(self, signal: Dict[str, Any]) -> None:
+    async def record_signal_generated(self, signal: Dict[str, Any], broker_context: Optional[str] = None) -> None:
         """Record trading signal generated"""
         try:
             timestamp = datetime.utcnow().isoformat()
             
-            # Increment count  
-            count_key = MetricsRegistry.signals_count(self.broker_namespace)
-            signal_count = await self.redis.incr(count_key)
+            # Select namespace (explicit broker preferred)
+            namespace = broker_context or self.broker_namespace
+
+            # Increment count and set last info via pipeline
+            count_key = MetricsRegistry.signals_count(namespace)
             
             # Store last signal info
-            last_key = MetricsRegistry.signals_last(self.broker_namespace)
+            last_key = MetricsRegistry.signals_last(namespace)
             last_data = {
                 "timestamp": timestamp,
                 "signal_id": signal.get("id"),
                 "strategy_id": signal.get("strategy_id"), 
                 "instrument_token": signal.get("instrument_token"),
-                "signal_type": signal.get("signal_type"),
-                "signal_count": signal_count
+                "signal_type": signal.get("signal_type")
             }
             
-            await self.redis.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            pipe = self.redis.pipeline(transaction=False)
+            pipe.incr(count_key)
+            pipe.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            res = await pipe.execute()
+            signal_count = int(res[0]) if res and len(res) > 0 else 0
             
             self.logger.debug("Signal generation recorded",
                             signal_id=signal.get("id"),
                             strategy_id=signal.get("strategy_id"),
                             signal_count=signal_count,
-                            broker=self.broker_namespace)
+                            broker=namespace)
                             
         except Exception as e:
             self.logger.error("Failed to record signal generation",
                             error=str(e),
                             broker=self.broker_namespace)
     
-    async def record_signal_validated(self, signal: Dict[str, Any], passed: bool) -> None:
+    async def record_signal_validated(self, signal: Dict[str, Any], passed: bool, broker_context: Optional[str] = None) -> None:
         """Record signal validation result"""
         try:
             timestamp = datetime.utcnow().isoformat()
             
+            # Select namespace (explicit broker preferred)
+            namespace = broker_context or self.broker_namespace
+
             # Increment appropriate count
             if passed:
-                count_key = MetricsRegistry.signals_validated_count(self.broker_namespace)
+                count_key = MetricsRegistry.signals_validated_count(namespace)
             else:
-                # Note: signals_rejected not yet in registry - using direct key for now
-                count_key = f"pipeline:signals_rejected:{self.broker_namespace}:count"
-                
-            validation_count = await self.redis.incr(count_key)
+                count_key = MetricsRegistry.signals_rejected_count(namespace)
+            
             
             # Store last validation info
-            last_key = MetricsRegistry.signals_validated_last(self.broker_namespace)
+            last_key = (
+                MetricsRegistry.signals_validated_last(namespace)
+                if passed else MetricsRegistry.signals_rejected_last(namespace)
+            )
             last_data = {
                 "timestamp": timestamp,
                 "signal_id": signal.get("id"),
                 "strategy_id": signal.get("strategy_id"),
-                "validation_passed": passed,
-                "validation_count": validation_count
+                "validation_passed": passed
             }
             
-            await self.redis.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            pipe = self.redis.pipeline(transaction=False)
+            pipe.incr(count_key)
+            pipe.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            res = await pipe.execute()
+            validation_count = int(res[0]) if res and len(res) > 0 else 0
             
             self.logger.debug("Signal validation recorded",
                             signal_id=signal.get("id"),
                             validation_passed=passed,
                             validation_count=validation_count,
-                            broker=self.broker_namespace)
+                            broker=namespace)
                             
         except Exception as e:
             self.logger.error("Failed to record signal validation",
                             error=str(e),
                             broker=self.broker_namespace)
     
-    async def record_order_processed(self, order: Dict[str, Any]) -> None:
+    async def record_order_processed(self, order: Dict[str, Any], broker_context: Optional[str] = None) -> None:
         """Record order processed by trading engine"""
         try:
             timestamp = datetime.utcnow().isoformat()
             
-            # Increment count
-            count_key = MetricsRegistry.orders_count(self.broker_namespace)
-            order_count = await self.redis.incr(count_key)
+            # Select namespace (explicit broker preferred)
+            namespace = broker_context or self.broker_namespace
+
+            # Increment count and set last via pipeline
+            count_key = MetricsRegistry.orders_count(namespace)
             
             # Store last order info
-            last_key = MetricsRegistry.orders_last(self.broker_namespace)
+            last_key = MetricsRegistry.orders_last(namespace)
             last_data = {
                 "timestamp": timestamp,
                 "order_id": order.get("id"),
                 "strategy_id": order.get("strategy_id"),
                 "status": order.get("status"),
-                "instrument_token": order.get("instrument_token"),
-                "order_count": order_count
+                "instrument_token": order.get("instrument_token")
             }
             
-            await self.redis.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            pipe = self.redis.pipeline(transaction=False)
+            pipe.incr(count_key)
+            pipe.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            res = await pipe.execute()
+            order_count = int(res[0]) if res and len(res) > 0 else 0
             
             self.logger.debug("Order processing recorded",
                             order_id=order.get("id"),
                             status=order.get("status"),
                             order_count=order_count,
-                            broker=self.broker_namespace)
+                            broker=namespace)
                             
         except Exception as e:
             self.logger.error("Failed to record order processing",
                             error=str(e),
                             broker=self.broker_namespace)
     
-    async def record_portfolio_update(self, portfolio_id: str, update_data: Dict[str, Any]) -> None:
+    async def record_portfolio_update(self, portfolio_id: str, update_data: Dict[str, Any], broker_context: Optional[str] = None) -> None:
         """Record portfolio update"""
         try:
             timestamp = datetime.utcnow().isoformat()
             
-            # Increment count
-            count_key = MetricsRegistry.portfolio_updates_count(self.broker_namespace)
-            update_count = await self.redis.incr(count_key)
+            # Select namespace (explicit broker preferred)
+            namespace = broker_context or self.broker_namespace
+
+            # Increment count and set last via pipeline
+            count_key = MetricsRegistry.portfolio_updates_count(namespace)
             
             # Store last update info  
-            last_key = MetricsRegistry.portfolio_updates_last(self.broker_namespace)
+            last_key = MetricsRegistry.portfolio_updates_last(namespace)
             last_data = {
                 "timestamp": timestamp,
                 "portfolio_id": portfolio_id,
-                "update_count": update_count,
                 "total_pnl": update_data.get("total_pnl"),
                 "cash_balance": update_data.get("cash_balance")
             }
             
-            await self.redis.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            pipe = self.redis.pipeline(transaction=False)
+            pipe.incr(count_key)
+            pipe.setex(last_key, self.metrics_ttl, json.dumps(last_data))
+            res = await pipe.execute()
+            update_count = int(res[0]) if res and len(res) > 0 else 0
             
             self.logger.debug("Portfolio update recorded",
                             portfolio_id=portfolio_id,
                             update_count=update_count,
-                            broker=self.broker_namespace)
+                            broker=namespace)
                             
         except Exception as e:
             self.logger.error("Failed to record portfolio update",

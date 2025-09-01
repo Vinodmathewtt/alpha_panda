@@ -2,20 +2,22 @@
 
 ## Overview
 
-The `core/` module contains shared libraries and utilities used across all services and components of Alpha Panda.
+The `core/` module contains shared libraries and utilities used across all services and components of Alpha Panda. It provides the foundation for the unified log architecture with event streaming, multi-broker support, and composition-first design patterns.
 
 ## Module Structure
 
 ```
 core/
-├── config/            # Pydantic settings and configuration
-├── database/          # PostgreSQL models and connection management
-├── health/           # Health checking utilities
-├── logging/          # Enhanced logging with channels
-├── market_hours/     # Market hours validation
-├── monitoring/       # Metrics and monitoring
-├── schemas/          # Event contracts and topic definitions
-└── streaming/        # aiokafka client utilities and patterns
+├── config/            # Pydantic settings and configuration management
+├── database/          # PostgreSQL models and async connection management  
+├── health/            # Comprehensive health checking and monitoring
+├── logging/           # Enhanced structured logging with correlation tracking
+├── market_hours/      # Indian stock market hours validation and checking
+├── monitoring/        # Metrics collection and performance monitoring
+├── schemas/           # Event contracts, topic definitions, and data models
+├── services/          # Base service classes and common service patterns
+├── streaming/         # Stream processing patterns and utilities
+└── utils/             # Common utilities, exceptions, and state management
 ```
 
 ## Key Components
@@ -68,20 +70,57 @@ settings = get_settings()
 database_url = settings.database.url
 ```
 
-### Stream Processing
+### Stream Processing (Modern Pattern)
 ```python
-from core.streaming.lifecycle_manager import StreamProcessor
+from core.streaming.patterns.stream_service_builder import StreamServiceBuilder
 
-class MyService(StreamProcessor):
-    async def process_message(self, message):
-        # Process message with automatic deduplication
-        pass
+# Modern StreamServiceBuilder pattern
+self.orchestrator = (StreamServiceBuilder("service_name", config, settings)
+    .with_redis(redis_client)
+    .with_error_handling()
+    .with_metrics()
+    .add_producer()
+    .add_consumer_handler(
+        topics=topic_list,
+        group_id="alpha-panda.service.group",
+        handler_func=self._handle_message
+    )
+    .build()
+)
 ```
 
-## Critical Patterns
+### Topic-Aware Message Handling
+```python
+# Handlers accept (message, topic) for broker context extraction
+async def _handle_message(self, message: Dict[str, Any], topic: str) -> None:
+    broker = topic.split('.')[0]  # Extract broker from topic name
+    # Route based on broker context
+```
 
-- **EventEnvelope Standard**: All events must use the standardized envelope
-- **Broker Segregation**: All components respect broker namespace isolation
-- **Async Patterns**: Full asyncio support throughout
-- **Type Safety**: Pydantic models for all data structures
-- **Correlation Tracking**: Event correlation for debugging and monitoring
+## Architecture Patterns
+
+### Multi-Broker Architecture  
+- **Unified Deployment**: Single service instance handles multiple brokers simultaneously
+- **Topic-Level Isolation**: Hard segregation via broker-prefixed topics (paper.*, zerodha.*)
+- **Shared Services**: Market data uses single feed model for consistency
+- **Cache Segregation**: Redis keys prefixed by broker for state isolation
+
+### Composition-First Design
+- **Protocol Contracts**: Use `typing.Protocol` for interfaces instead of ABCs
+- **Dependency Injection**: Constructor-based dependency injection with typed parameters
+- **Factory Functions**: Module-level factories for object assembly
+- **Service Builder**: StreamServiceBuilder pattern for service composition
+
+### Event-Driven Architecture
+- **EventEnvelope Standard**: All events use standardized envelope with correlation tracking
+- **Topic Routing**: Route by topic name only, no wildcard subscriptions
+- **Deduplication**: Consumer-side event deduplication using Redis with TTL
+- **DLQ Pattern**: Structured retry with dead letter queue routing
+
+## Critical Implementation Rules
+
+- **Broker Segregation**: Maintain hard isolation between paper and Zerodha data
+- **Fail-Fast Policy**: System must fail fast and fail hard - no silent failures
+- **Event Deduplication**: All consumers must implement idempotent message processing
+- **Correlation Tracking**: All events must include correlation IDs for tracing
+- **Type Safety**: Full type hints required on all public APIs

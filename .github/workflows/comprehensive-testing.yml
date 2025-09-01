@@ -112,6 +112,19 @@ jobs:
         python scripts/bootstrap_test_topics.py
       env:
         REDPANDA_BOOTSTRAP_SERVERS: localhost:9092
+
+    - name: Register Avro schemas
+      run: |
+        python scripts/register_schemas.py
+      env:
+        SCHEMA_REGISTRY_URL: http://localhost:8081
+
+    - name: Validate schema compatibility
+      run: |
+        python scripts/validate_schema_compatibility.py
+      env:
+        SCHEMA_REGISTRY_URL: http://localhost:8081
+        COMPATIBILITY_LEVEL: BACKWARD
     
     - name: Seed test data
       run: |

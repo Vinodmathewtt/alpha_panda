@@ -2,7 +2,7 @@
 
 ## Service Architecture
 
-Alpha Panda follows a microservices architecture with event streaming, where all services implement the stream processing pattern with complete broker segregation.
+Alpha Panda follows a microservices architecture with unified log streaming, where services implement the modern StreamServiceBuilder pattern with multi-broker support. Services use composition-first design with protocol contracts and topic-aware message handling.
 
 ## Service Execution Flow
 
@@ -33,23 +33,17 @@ Alpha Panda follows a microservices architecture with event streaming, where all
   - **Rejected**: Publishes to `{broker}.signals.rejected` topic
 - **Events**: `EventType.VALIDATED_SIGNAL` or `EventType.REJECTED_SIGNAL`
 
-### 4. Trading Engine Service (`services/trading_engine/`)
-- **Input**: Consumes from `{broker}.signals.validated` topic + `market.ticks` for pricing
-- **Processing**:
-  - Routes validated signals based on execution mode
-  - **Paper Trading**: Uses `PaperTrader` for simulation
-  - **Zerodha Trading**: Uses `ZerodhaTrader` for real execution (per-strategy config)
-- **Output**: Publishes to `{broker}.orders.filled` or `{broker}.orders.failed` topics
-- **Events**: `EventType.ORDER_FILLED`, `EventType.ORDER_FAILED`, `EventType.ORDER_PLACED`
+### 4. Broker‑Scoped Trading Services
+- Paper Trading (`services/paper_trading/`)
+  - Input: `paper.signals.validated`
+  - Output: broker‑scoped order lifecycle topics (`paper.orders.*`)
+  - Notes: Purely simulated execution path
+- Zerodha Trading (`services/zerodha_trading/`)
+  - Input: `zerodha.signals.validated`
+  - Output: broker‑scoped order lifecycle topics (`zerodha.orders.*`)
+  - Notes: Real broker integration path
 
-### 5. Portfolio Manager Service (`services/portfolio_manager/`)
-- **Input**: Consumes from `{broker}.orders.filled` topic
-- **Processing**:
-  - Updates portfolio positions and P&L
-  - Calculates real-time portfolio metrics
-  - Maintains position history
-- **Output**: Updates Redis cache with broker-prefixed keys (`{broker}:portfolio:*`)
-- **Cache Keys**: `{broker}:portfolio:{strategy_id}`, `{broker}:positions:*`
+Migration completed: legacy `services/trading_engine/` and `services/portfolio_manager/` have been removed. Trading is now handled by `services/paper_trading/` and `services/zerodha_trading/`.
 
 ### 6. API Service (`api/`)
 - **Input**: HTTP requests for portfolio/position data
@@ -57,14 +51,66 @@ Alpha Panda follows a microservices architecture with event streaming, where all
 - **Output**: JSON responses with current portfolio state
 - **Read-Only**: Never writes to core trading pipeline
 
-## Common Patterns
+## Modern Service Patterns
 
-All services follow these patterns:
-- **StreamProcessor Pattern**: Inherit from base class with producer/consumer and deduplication
-- **Broker Namespace**: Each service instance is configured with `BROKER_NAMESPACE=paper|zerodha`
-- **Event Deduplication**: Consumer-side dedup using event_id in Redis with TTL
-- **Graceful Shutdown**: `await consumer.stop()` and `await producer.stop()`
+### StreamServiceBuilder Pattern
+All services use the modern StreamServiceBuilder for composition-based architecture:
+
+```python
+self.orchestrator = (StreamServiceBuilder("service_name", config, settings)
+    .with_redis(redis_client)
+    .with_error_handling()
+    .with_metrics()
+    .add_producer()
+    .add_consumer_handler(topics=topic_list, group_id=group_id, handler_func=handler)
+    .build()
+)
+```
+
+### Topic-Aware Handlers
+Message handlers accept (message, topic) parameters for broker context extraction:
+
+```python
+async def _handle_message(self, message: Dict[str, Any], topic: str) -> None:
+    broker = topic.split('.')[0]  # Extract broker: "paper.signals.raw" -> "paper"
+    # Route based on broker context
+```
+
+### Multi-Broker Architecture
+- **Unified Deployment**: Single service instance handles multiple brokers (`ACTIVE_BROKERS=paper,zerodha`)
+- **Topic Segregation**: Broker-prefixed topics for hard isolation (paper.*, zerodha.*)
+- **Unified Consumer Groups**: Single consumer group processes all broker topics
+- **Cache Segregation**: Redis keys prefixed by broker for state isolation
+
+> Deprecation note: any design that centralizes behavior around a global `broker_namespace` should be considered transitional. Services must derive broker routing from topic names and pass explicit broker context to metrics. The `broker_namespace` label is maintained for metrics compatibility only and should be refactored out over time.
+
+## Service Types
+
+### Shared Services (Single-Broker Model)
+- **Market Feed Service**: Single Zerodha feed publishing to shared `market.ticks` topic
+- **Auth Service**: Unified authentication for all brokers
+
+### Multi-Broker Services (Unified Instance Model)  
+- **Strategy Runner**: Processes ticks, generates signals for all active brokers
+- **Risk Manager**: Validates signals from all brokers with separate risk rules
+
+### Broker-Scoped Services  
+- **Paper Trading**: Simulated execution for paper broker; emits orders and PnL snapshots
+- **Zerodha Trading**: Live execution path for zerodha broker; emits orders and PnL snapshots
+
+## Migration Completed
+- DI now starts `paper_trading_service` and `zerodha_trading_service` only.
+- Monitoring and dashboards include dedicated panels for both services (events, DLQ, inactivity, lag).
+- Topic bootstrap scripts include `{broker}.pnl.snapshots` topics.
 
 ## Configuration
 
-Services are configured through environment variables and central settings, with broker-specific deployment controlled by the `BROKER_NAMESPACE` variable.
+Services use multi-broker configuration with `ACTIVE_BROKERS` environment variable:
+
+```bash
+# Multi-broker deployment (default)
+ACTIVE_BROKERS=paper,zerodha
+
+# Single broker deployment  
+ACTIVE_BROKERS=paper
+```

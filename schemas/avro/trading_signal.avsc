@@ -1,0 +1,16 @@
+{
+  "type": "record",
+  "name": "TradingSignal",
+  "namespace": "alpha.panda",
+  "fields": [
+    {"name": "strategy_id", "type": "string"},
+    {"name": "instrument_token", "type": "long"},
+    {"name": "signal_type", "type": "string"},
+    {"name": "quantity", "type": "int"},
+    {"name": "price", "type": ["null", "double"], "default": null},
+    {"name": "timestamp", "type": "string"},
+    {"name": "confidence", "type": ["null", "double"], "default": null},
+    {"name": "metadata", "type": ["null", "string"], "default": null}
+  ]
+}
+

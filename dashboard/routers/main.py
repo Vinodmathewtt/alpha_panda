@@ -20,10 +20,16 @@ async def dashboard_home(
     redis_client: redis.Redis = Depends(get_redis_client)
 ):
     """Main dashboard page with system overview"""
+    # Display active brokers context (comma-separated) or 'shared' when unset
+    try:
+        brokers = getattr(settings, 'active_brokers', []) or []
+        broker_ctx = ",".join(brokers) if brokers else "shared"
+    except Exception:
+        broker_ctx = "shared"
     context = {
         "request": request,
         "user": current_user,
-        "broker": getattr(settings, 'broker_namespace', 'Not Set'),
+        "broker": broker_ctx,
         "title": "Alpha Panda Dashboard"
     }
     return templates.TemplateResponse("dashboard/index.html", context)
@@ -144,8 +150,8 @@ async def get_pipeline_status():
             "market_feed": {"status": "healthy", "throughput": 100},
             "strategy_runner": {"status": "healthy", "throughput": 95},
             "risk_manager": {"status": "healthy", "throughput": 90},
-            "trading_engine": {"status": "healthy", "throughput": 85},
-            "portfolio_manager": {"status": "healthy", "throughput": 85}
+            "paper_trading": {"status": "healthy", "throughput": 80},
+            "zerodha_trading": {"status": "healthy", "throughput": 75}
         }
     }
 

@@ -117,6 +117,14 @@ class PipelineValidator:
     async def _validate_market_data_flow(self) -> Dict[str, Any]:
         """Validate market data ingestion and distribution (shared across brokers)"""
         try:
+            # Skip strict latency checks when market is closed to avoid false positives
+            if not self.market_hours_checker.is_market_open():
+                return {
+                    "healthy": True,
+                    "latency_ms": None,
+                    "message": "Market closed: skipping market-data latency checks",
+                    "reason": "market_closed"
+                }
             # Check for recent market ticks - FIXED: Use pipeline metrics format with shared "market" namespace
             last_tick_key = MetricsRegistry.market_ticks_last()
             last_tick_time_str = await self.redis.get(last_tick_key)

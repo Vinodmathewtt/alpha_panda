@@ -276,8 +276,9 @@ ZERODHA__API_SECRET=your_api_secret
 REDPANDA__BOOTSTRAP_SERVERS=localhost:19092
 REDPANDA__GROUP_ID_PREFIX=alpha-panda
 
-# Service Configuration
-BROKER_NAMESPACE=paper  # or zerodha
+# Active Brokers (global app setting)
+# Market feed publishes to shared 'market.ticks' and does not require a per-broker setting
+ACTIVE_BROKERS=paper,zerodha
 ```
 
 ### Instrument Configuration

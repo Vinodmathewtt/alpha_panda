@@ -6,6 +6,7 @@ import asyncio
 from api.dependencies import get_log_service, get_pagination_params, get_log_filter_params
 from api.services.log_service import LogService
 from api.schemas.responses import StandardResponse, PaginatedResponse, LogEntry, LogStatistics
+from core.logging import get_statistics as get_logging_statistics
 
 router = APIRouter(prefix="/logs", tags=["Logs"])
 
@@ -165,6 +166,16 @@ async def get_log_levels():
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get log levels: {str(e)}")
+
+
+@router.get("/stats", response_model=StandardResponse[dict])
+async def logging_stats():
+    """Expose logging subsystem stats: queue, channels, and configuration."""
+    try:
+        stats = get_logging_statistics()
+        return StandardResponse(status="success", data=stats, message="Logging statistics")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get logging stats: {str(e)}")
 
 @router.get("/tail/{service_name}")
 async def tail_service_logs(

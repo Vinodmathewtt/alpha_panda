@@ -32,9 +32,9 @@ from core.streaming.error_handling import ErrorHandler, DLQPublisher, ErrorClass
 from core.streaming.correlation import CorrelationContext, CorrelationLogger, trace_metrics
 from core.streaming.lifecycle_manager import get_lifecycle_manager, GracefulShutdownMixin
 import redis.asyncio as redis
-import logging
+from core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("core.streaming.clients", component="streaming")
 
 
 def json_serializer(obj):

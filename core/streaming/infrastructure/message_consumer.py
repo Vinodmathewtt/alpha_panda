@@ -1,12 +1,18 @@
 import asyncio
 import json
-import logging
+from core.logging import get_logger
 from typing import List, AsyncGenerator, Dict, Any, Optional
 from aiokafka import AIOKafkaConsumer
 from aiokafka.structs import TopicPartition
 from core.config.settings import RedpandaSettings
+try:
+    import orjson  # type: ignore
+    _HAS_ORJSON = True
+except Exception:  # pragma: no cover
+    orjson = None  # type: ignore
+    _HAS_ORJSON = False
 
-logger = logging.getLogger(__name__)
+logger = get_logger("core.streaming.message_consumer", component="streaming")
 
 class MessageConsumer:
     """Pure message consumption without business logic concerns."""
@@ -33,7 +39,7 @@ class MessageConsumer:
             session_timeout_ms=30000,
             heartbeat_interval_ms=10000,
             max_poll_records=50,
-            value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+            value_deserializer=(lambda m: orjson.loads(m) if _HAS_ORJSON else json.loads(m.decode('utf-8')))
         )
         
         await self._consumer.start()
@@ -60,6 +66,7 @@ class MessageConsumer:
                     'topic': message.topic,
                     'key': message.key.decode('utf-8') if message.key else None,
                     'value': message.value,
+                    'headers': {k: (v.decode('utf-8') if isinstance(v, (bytes, bytearray)) else v) for k, v in (message.headers or [])},
                     'partition': message.partition,
                     'offset': message.offset,
                     'timestamp': message.timestamp,

@@ -77,7 +77,58 @@ services:
     profiles:
       - console
 
+  # Kafka Exporter - Prometheus exporter for Kafka/Redpanda (consumer lag, offsets)
+  kafka-exporter:
+    image: bitnami/kafka-exporter:latest
+    container_name: alpha-panda-kafka-exporter
+    command:
+      - --kafka.server=redpanda:29092
+      - --kafka.version=3.6.0
+    ports:
+      - "9308:9308"  # Prometheus scrape
+    depends_on:
+      - redpanda
+    profiles:
+      - observability
+
+  # Prometheus - Scrapes API, Redpanda, and Kafka Exporter
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: alpha-panda-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docs/observability/prometheus:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - redpanda
+      - kafka-exporter
+    profiles:
+      - observability
+
+  # Grafana - One-click UI for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: alpha-panda-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./config/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./docs/observability/grafana:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    profiles:
+      - observability
+
 volumes:
   redpanda_data:
   postgres_data:
   redis_data:
+  prometheus_data:
+  grafana_data:

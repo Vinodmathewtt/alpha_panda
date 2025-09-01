@@ -30,15 +30,16 @@ ALL events MUST use `EventEnvelope` from `core/schemas/events.py`. See example f
 **Format**: `{broker}.{domain}.{event_type}[.dlq]`
 
 **Examples**: 
-- paper.market.ticks, zerodha.market.ticks
+- market.ticks (shared)
 - paper.signals.raw, zerodha.signals.validated
 - paper.orders.filled, zerodha.orders.filled
 - paper.orders.filled.dlq (Dead Letter Queue)
 
 #### Complete Topic Map
 See complete topic mapping in `examples/architecture/topic_configuration.py`:
-- **Paper Trading**: paper.market.ticks, paper.signals.raw, paper.signals.validated, paper.orders.submitted, paper.orders.ack, paper.orders.filled, paper.pnl.snapshots, paper.*.dlq
-- **Zerodha Trading**: zerodha.market.ticks, zerodha.signals.raw, zerodha.signals.validated, zerodha.orders.submitted, zerodha.orders.ack, zerodha.orders.filled, zerodha.pnl.snapshots, zerodha.*.dlq
+- **Market Data (shared)**: market.ticks
+- **Paper Trading**: paper.signals.raw, paper.signals.validated, paper.orders.submitted, paper.orders.ack, paper.orders.filled, paper.pnl.snapshots, paper.*.dlq
+- **Zerodha Trading**: zerodha.signals.raw, zerodha.signals.validated, zerodha.orders.submitted, zerodha.orders.ack, zerodha.orders.filled, zerodha.pnl.snapshots, zerodha.*.dlq
 
 #### Hard Isolation Guardrails
 - **Topic Namespacing**: All topics prefixed by broker for hard segregation
@@ -118,10 +119,63 @@ See implementation example: `examples/streaming/lifecycle_management.py`
 ### Optimized Producer/Consumer Configuration
 See optimized configuration examples: `examples/streaming/producer_consumer_config.py`
 
+## Modern Service Architecture Patterns (2025 Update)
+
+### StreamServiceBuilder Pattern
+**CRITICAL**: All services now use composition-based StreamServiceBuilder for service orchestration:
+
+```python
+self.orchestrator = (StreamServiceBuilder("service_name", config, settings)
+    .with_redis(redis_client)           # Optional Redis integration
+    .with_error_handling()              # Automatic DLQ and retry logic  
+    .with_metrics()                     # Performance monitoring
+    .add_producer()                     # Kafka producer with idempotence
+    .add_consumer_handler(              # Topic-aware consumer
+        topics=topic_list,
+        group_id="alpha-panda.service.group", 
+        handler_func=self._handle_message
+    )
+    .build()
+)
+```
+
+### Topic-Aware Handler Pattern  
+**CRITICAL**: Message handlers accept `(message, topic)` parameters for broker context extraction:
+
+```python
+async def _handle_message(self, message: Dict[str, Any], topic: str) -> None:
+    # Extract broker from topic name for routing decisions
+    broker = topic.split('.')[0]  # "paper.signals.validated" -> "paper"
+    
+    # Route based on extracted broker context
+    trader = self.trader_factory.get_trader(broker)
+    await trader.execute_order(signal)
+```
+
+### Multi-Broker Service Architecture
+**CRITICAL**: Services handle multiple brokers simultaneously with unified deployment:
+
+- **Unified Consumer Groups**: Single consumer group per service processes all broker topics
+- **Dynamic Topic Subscription**: Services subscribe to topics for all active brokers at startup
+- **Cache Key Isolation**: Redis keys prefixed by broker (`paper:*` vs `zerodha:*`)
+- **Configuration-Driven**: `ACTIVE_BROKERS=paper,zerodha` determines which brokers to handle
+
 ## Component Initialization Pattern
 
-All services follow the LifespanService protocol:
-- Async/await pattern throughout the codebase
-- Graceful shutdown with producer.flush()
-- Structured logging with correlation IDs using structlog
-- Event-driven architecture with all dynamic data through Redpanda streams
+All services follow modern composition-based patterns:
+- **StreamServiceBuilder Pattern**: Composition-based service orchestration
+- **Protocol Contracts**: Use `typing.Protocol` for interfaces instead of inheritance
+- **Topic-Aware Handlers**: Message handlers extract broker context from topic names
+- **Async/await Pattern**: Full asyncio support throughout the codebase
+- **Graceful Shutdown**: Proper producer.flush() and consumer.stop() handling
+- **Structured Logging**: Correlation IDs with structlog for request tracing
+- **Event-Driven Architecture**: All dynamic data flows through Redpanda streams
+
+## Documentation References
+
+### Comprehensive Module Documentation
+All implementation patterns are now documented with complete README.md files:
+- [Core Architecture Patterns](../../core/README.md) - StreamServiceBuilder and foundational patterns
+- [Service Implementation Patterns](../../services/README.md) - Multi-broker service architecture  
+- [Strategy Framework Patterns](../../strategies/README.md) - Composition vs inheritance approaches
+- [Configuration Patterns](../../core/config/README.md) - Settings and environment management

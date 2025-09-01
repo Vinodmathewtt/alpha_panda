@@ -115,6 +115,15 @@ if ENHANCED_LOGGING_AVAILABLE:
     def get_error_logger_safe(name: str) -> structlog.BoundLogger:
         """Get an error logger safely."""
         return get_error_logger(name)
+
+    def get_database_logger_safe(name: str) -> structlog.BoundLogger:
+        """Get a database logger safely."""
+        try:
+            # Only available when enhanced logging is present
+            from .enhanced_logging import get_database_logger_safe as _db_safe
+            return _db_safe(name)
+        except Exception:
+            return get_enhanced_logger(name, "database")
         
 else:
     # Fallback functions that use basic logging
@@ -143,6 +152,9 @@ else:
     def get_error_logger_safe(name: str) -> structlog.BoundLogger:
         return get_logger(name)
 
+    def get_database_logger_safe(name: str) -> structlog.BoundLogger:
+        return get_logger(name)
+
 
 # Export all functions
 __all__ = [
@@ -157,6 +169,7 @@ __all__ = [
     "get_performance_logger_safe",
     "get_monitoring_logger_safe", 
     "get_error_logger_safe",
+    "get_database_logger_safe",
     "ENHANCED_LOGGING_AVAILABLE",
 ]
 

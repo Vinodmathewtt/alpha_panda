@@ -59,6 +59,17 @@ class MetricsRegistry:
     def signals_validated_count(cls, broker: str) -> str:
         """Key for validated signals count"""
         return cls._build_key("signals_validated", broker, "count")
+
+    # Signals Rejected Stage (broker-specific)
+    @classmethod
+    def signals_rejected_last(cls, broker: str) -> str:
+        """Key for last rejected signal timestamp"""
+        return cls._build_key("signals_rejected", broker, "last")
+
+    @classmethod
+    def signals_rejected_count(cls, broker: str) -> str:
+        """Key for rejected signals count"""
+        return cls._build_key("signals_rejected", broker, "count")
         
     # Order Processing Stage (broker-specific)
     @classmethod

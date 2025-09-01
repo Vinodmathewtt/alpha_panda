@@ -24,7 +24,9 @@ async def test_enhanced_monitoring():
     try:
         # Load settings
         settings = Settings()
-        print(f"✅ Settings loaded - Broker: {settings.broker_namespace}")
+        active = getattr(settings, 'active_brokers', [])
+        broker_ctx = (active[0] if active else 'shared')
+        print(f"✅ Settings loaded - Brokers: {active} (ctx={broker_ctx})")
         
         # Test logging configuration
         configure_logging(settings)
@@ -34,7 +36,7 @@ async def test_enhanced_monitoring():
         trading_logger = get_trading_logger_safe("test_trading")
         monitoring_logger = get_monitoring_logger_safe("test_monitoring")
         
-        trading_logger.info("Test trading log message", test_data="example", broker=settings.broker_namespace)
+        trading_logger.info("Test trading log message", test_data="example", broker=broker_ctx)
         monitoring_logger.info("Test monitoring log message", component="test")
         print("✅ Enhanced loggers working correctly")
         

@@ -63,6 +63,12 @@ All API responses follow a standardized format:
 }
 ```
 
+### Request/Response IDs
+- Each HTTP request gets a unique `X-Request-ID`; the response echoes this value.
+- A `X-Correlation-ID` is ensured/propagated via the correlation manager and is also returned in responses.
+- Both IDs are bound into structured logs and enriched API access logs for end-to-end tracing.
+- Include these IDs when reporting issues to help correlate client/server logs.
+
 ## 🌐 API Endpoints
 
 ### Core System
@@ -146,8 +152,10 @@ GET /api/v1/services/{service_name}/status/history # Status history
 - `market_feed_service` - Market data feed
 - `strategy_runner_service` - Strategy execution
 - `risk_manager_service` - Risk management
-- `trading_engine_service` - Order execution
-- `portfolio_manager_service` - Portfolio tracking
+- `trading_engine_service` - Order execution (legacy; being replaced)
+- `portfolio_manager_service` - Portfolio tracking (legacy; being replaced)
+- `paper_trading_service` - Broker‑scoped paper trading
+- `zerodha_trading_service` - Broker‑scoped Zerodha trading
 - `pipeline_monitor` - Pipeline monitoring
 
 ### 📝 Log Management
@@ -167,7 +175,7 @@ GET /api/v1/logs/export/{id}/status     # Export status
 
 **Query Parameters:**
 ```http
-GET /api/v1/logs/?level=ERROR&service=trading_engine_service&page=1&size=50
+GET /api/v1/logs/?level=ERROR&service=paper_trading_service&page=1&size=50
 GET /api/v1/logs/search?query=order&page=1&size=20
 ```
 
@@ -243,16 +251,16 @@ API_HEALTH_CHECK_INTERVAL=30
 API_METRICS_RETENTION_HOURS=24
 ```
 
-### Broker Namespace
+### Active Brokers
 
-The API supports dual broker architecture:
+The API runs in a unified multi-broker deployment. Configure the active brokers:
 
 ```bash
-# Paper trading
-BROKER_NAMESPACE=paper
+# Multi-broker (default)
+ACTIVE_BROKERS=paper,zerodha
 
-# Live trading
-BROKER_NAMESPACE=zerodha
+# Single broker (optional)
+ACTIVE_BROKERS=paper
 ```
 
 ## 📚 Usage Examples
@@ -500,7 +508,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - BROKER_NAMESPACE=zerodha
+      - ACTIVE_BROKERS=paper,zerodha
       - API_REQUIRE_AUTH=true
       - API_RATE_LIMIT_CALLS=1000
     depends_on:

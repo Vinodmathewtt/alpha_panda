@@ -1,6 +1,6 @@
 # Complete settings with ALL required sections
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import BaseModel, Field, validator, root_validator, field_validator
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 from typing import Literal, List, Any, Union
 from pathlib import Path
@@ -72,6 +72,9 @@ class LoggingSettings(BaseModel):
     logs_dir: str = "logs"
     file_max_size: str = "100MB"
     file_backup_count: int = 5
+    # Asynchronous logging
+    queue_enabled: bool = True
+    queue_maxsize: int = 10000
     
     # Multi-channel logging
     multi_channel_enabled: bool = True
@@ -88,6 +91,11 @@ class LoggingSettings(BaseModel):
     auto_cleanup_enabled: bool = True
     compression_enabled: bool = True
     compression_age_days: int = 7
+    # Redaction
+    redact_keys: list[str] = [
+        "authorization", "access_token", "refresh_token", "api_key", "api-secret",
+        "api_secret", "password", "secret", "token", "set-cookie"
+    ]
 
 
 class ReconnectionSettings(BaseModel):
@@ -136,6 +144,15 @@ class MonitoringSettings(BaseModel):
     startup_grace_period_seconds: float = 30.0
 
 
+class TracingSettings(BaseModel):
+    """OpenTelemetry tracing configuration"""
+    enabled: bool = False
+    exporter: str = "none"  # none|otlp
+    otlp_endpoint: str = "http://localhost:4317"  # OTLP gRPC default
+    service_name: str | None = None
+    sampling_ratio: float = 1.0
+
+
 class APISettings(BaseModel):
     # CORS settings
     cors_origins: List[str] = Field(
@@ -155,7 +172,7 @@ class APISettings(BaseModel):
         description="Allow credentials in CORS requests"
     )
     
-    @validator('cors_origins')
+    @field_validator('cors_origins')
     def validate_cors_origins(cls, v):
         """Validate CORS origins configuration"""
         if "*" in v and len(v) > 1:
@@ -204,6 +221,7 @@ class Settings(BaseSettings):
         return v
     
     app_name: str = "Alpha Panda"
+    version: str = "2.1.0"
     environment: Environment = Environment.DEVELOPMENT
     
     # Legacy log_level for backward compatibility
@@ -218,6 +236,18 @@ class Settings(BaseSettings):
     logging: LoggingSettings = LoggingSettings()
     monitoring: MonitoringSettings = MonitoringSettings()
     reconnection: ReconnectionSettings = ReconnectionSettings()
+    tracing: TracingSettings = TracingSettings()
+
+    # Kafka producer tuning (config-driven, per service)
+    class ProducerTuning(BaseModel):
+        linger_ms: int | None = None
+        compression_type: str | None = None  # gzip|snappy|lz4|zstd
+        batch_size: int | None = None
+        request_timeout_ms: int | None = None
+        max_in_flight_requests: int | None = None
+
+    # Map service_name -> ProducerTuning; e.g., {"market_feed": {"linger_ms": 2, "compression_type": "zstd"}}
+    producer_tuning: dict[str, ProducerTuning] = {}
     portfolio_manager: PortfolioManagerSettings = PortfolioManagerSettings()
     health_checks: HealthCheckSettings = HealthCheckSettings()
     api: APISettings = APISettings()

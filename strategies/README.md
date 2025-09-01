@@ -2,7 +2,10 @@
 
 ## Strategy Framework Evolution
 
-Alpha Panda now supports **two strategy architectures** - the modern composition-based framework (recommended) and the legacy inheritance-based pattern (maintained for backward compatibility).
+Alpha Panda supports **dual strategy architectures** following the composition-first Python development policy:
+
+- **Modern Composition Framework**: Protocol-based contracts with pure strategy logic (recommended)
+- **Legacy Inheritance Pattern**: BaseStrategy ABC (maintained for backward compatibility during migration)
 
 ## Modern Architecture: Composition-Based Strategies
 

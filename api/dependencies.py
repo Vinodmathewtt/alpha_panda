@@ -6,9 +6,9 @@ import redis.asyncio as redis
 from app.containers import AppContainer
 from core.config.settings import Settings
 from core.health.health_checker import ServiceHealthChecker
-from core.monitoring import PipelineMonitor
+from core.monitoring import PipelineMonitor, PipelineMetricsCollector
 from services.auth.service import AuthService
-from services.portfolio_manager.cache import PortfolioCache
+from core.trading.portfolio_cache import PortfolioCache
 from api.services.log_service import LogService
 from api.services.dashboard_service import DashboardService
 
@@ -76,6 +76,14 @@ def get_pipeline_monitor(
 ) -> PipelineMonitor:
     """Get pipeline monitor instance"""
     return pipeline_monitor
+
+@inject
+def get_pipeline_metrics_collector(
+    settings: Settings = Depends(Provide[AppContainer.settings]),
+    redis_client: redis.Redis = Depends(Provide[AppContainer.redis_client]),
+) -> PipelineMetricsCollector:
+    """Get pipeline metrics collector via DI for API endpoints"""
+    return PipelineMetricsCollector(redis_client, settings)
 
 @inject
 def get_log_service(

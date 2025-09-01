@@ -1,11 +1,11 @@
 import asyncio
-import logging
+from core.logging import get_logger
 from typing import List, Optional
 from ..infrastructure.message_consumer import MessageConsumer
 from ..infrastructure.message_producer import MessageProducer
 from ..reliability.reliability_layer import ReliabilityLayer
 
-logger = logging.getLogger(__name__)
+logger = get_logger("core.streaming.service_orchestrator", component="streaming")
 
 
 class ServiceOrchestrator:

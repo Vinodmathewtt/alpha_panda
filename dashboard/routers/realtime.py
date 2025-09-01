@@ -207,7 +207,8 @@ async def get_simulated_activity_event():
     """Generate simulated activity events"""
     events = [
         {"type": "info", "message": "Market feed connected", "service": "market_feed"},
-        {"type": "success", "message": "Order executed successfully", "service": "trading_engine"},
+        {"type": "success", "message": "Paper order filled", "service": "paper_trading"},
+        {"type": "success", "message": "Live order placed", "service": "zerodha_trading"},
         {"type": "warning", "message": "High CPU usage detected", "service": "system"},
         {"type": "info", "message": "Strategy signal generated", "service": "strategy_runner"},
         {"type": "success", "message": "Portfolio updated", "service": "portfolio_manager"},
@@ -222,7 +223,7 @@ async def get_simulated_activity_event():
 async def get_simulated_log_entry():
     """Generate simulated log entries"""
     levels = ["DEBUG", "INFO", "WARNING", "ERROR"]
-    services = ["market_feed", "strategy_runner", "risk_manager", "trading_engine", "portfolio_manager", "api"]
+    services = ["market_feed", "strategy_runner", "risk_manager", "paper_trading", "zerodha_trading", "api"]
 
     messages = {
         "DEBUG": "Processing tick data for symbol {}",

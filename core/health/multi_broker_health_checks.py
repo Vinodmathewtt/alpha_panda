@@ -1,5 +1,6 @@
 from typing import Dict, List, Any
-from .base import BaseHealthCheck, HealthCheckResult
+import os
+from core.health import HealthCheck as BaseHealthCheck, HealthCheckResult
 from core.config.settings import Settings
 
 class MultiBrokerHealthCheck(BaseHealthCheck):
@@ -21,8 +22,7 @@ class MultiBrokerHealthCheck(BaseHealthCheck):
                 results.append(HealthCheckResult(
                     component=f"{self.component_name}_{broker}",
                     passed=False,
-                    message=f"Health check failed for {broker}: {str(e)}",
-                    details={"broker": broker, "error": str(e)}
+                    message=f"Health check failed for {broker}: {str(e)}"
                 ))
         
         return results
@@ -31,14 +31,29 @@ class MultiBrokerHealthCheck(BaseHealthCheck):
         """Override this method in subclasses."""
         raise NotImplementedError
 
+    async def check(self) -> HealthCheckResult:
+        """Aggregate health across all active brokers into a single result."""
+        results = await self.check_all_brokers()
+        passed = all(r.passed for r in results)
+        if passed:
+            msg = f"All broker checks passed: {[r.component for r in results]}"
+        else:
+            failed = [r.component for r in results if not r.passed]
+            msg = f"Broker checks failed for: {failed}"
+        return HealthCheckResult(
+            component=self.component_name,
+            passed=passed,
+            message=msg
+        )
+
 class BrokerTopicHealthCheck(MultiBrokerHealthCheck):
     """Verify that all broker-specific topics exist."""
     
     component_name = "broker_topics"
     
     async def check_broker_health(self, broker: str) -> HealthCheckResult:
-        """Check if all required topics exist for a broker."""
-        from core.schemas.topics import TopicMap
+        """Check if all required topics exist and meet capacity expectations."""
+        from core.schemas.topics import TopicMap, TopicConfig
         
         topic_map = TopicMap(broker)
         required_topics = [
@@ -50,7 +65,6 @@ class BrokerTopicHealthCheck(MultiBrokerHealthCheck):
         ]
         
         # Check topic existence using admin client
-        # Implementation depends on your Kafka/Redpanda admin setup
         missing_topics = await self._check_topics_exist(required_topics)
         
         if missing_topics:
@@ -58,21 +72,136 @@ class BrokerTopicHealthCheck(MultiBrokerHealthCheck):
                 component=f"broker_topics_{broker}",
                 passed=False,
                 message=f"Missing topics for {broker}: {', '.join(missing_topics)}",
-                details={"broker": broker, "missing_topics": missing_topics}
+                details={
+                    "remediation": "Run topic bootstrap with overlays",
+                    "command": "make bootstrap",
+                    "env_overlays": {
+                        "SETTINGS__ENVIRONMENT": str(self.settings.environment).split('.')[-1],
+                        "REDPANDA_BROKER_COUNT": os.getenv("REDPANDA_BROKER_COUNT", "<brokers>"),
+                        "TOPIC_PARTITIONS_MULTIPLIER": os.getenv("TOPIC_PARTITIONS_MULTIPLIER", "1.0"),
+                        "CREATE_DLQ_FOR_ALL": os.getenv("CREATE_DLQ_FOR_ALL", "true"),
+                    },
+                },
+            )
+
+        # Validate partitions and replication factor using overlays
+        expectations = self._compute_expectations(required_topics, TopicConfig.CONFIGS)
+        capacity_issues = await self._check_topic_capacity(required_topics, expectations)
+        if capacity_issues:
+            msgs = [f"{t}: {reason}" for t, reason in capacity_issues.items()]
+            return HealthCheckResult(
+                component=f"broker_topics_{broker}",
+                passed=False,
+                message=f"Topic capacity below expectations for {broker}: {'; '.join(msgs)}",
+                details={
+                    "issues": capacity_issues,
+                    "expected": expectations,
+                    "remediation": "Increase partitions/RF via overlays and re-run bootstrap",
+                    "example": {
+                        "cmd": "make bootstrap",
+                        "SETTINGS__ENVIRONMENT": "production",
+                        "REDPANDA_BROKER_COUNT": "3",
+                        "TOPIC_PARTITIONS_MULTIPLIER": os.getenv("TOPIC_PARTITIONS_MULTIPLIER", "1.5"),
+                        "CREATE_DLQ_FOR_ALL": os.getenv("CREATE_DLQ_FOR_ALL", "true"),
+                    },
+                },
             )
         
         return HealthCheckResult(
             component=f"broker_topics_{broker}",
             passed=True,
-            message=f"All required topics exist for {broker}",
-            details={"broker": broker, "topic_count": len(required_topics)}
+            message=f"All required topics exist for {broker}"
         )
     
     async def _check_topics_exist(self, topics: List[str]) -> List[str]:
-        """Check which topics are missing - simplified implementation."""
-        # TODO: Implement actual topic existence check with Redpanda admin client
-        # For now, assume all topics exist
-        return []
+        """Check which topics are missing using Kafka admin client."""
+        from aiokafka.admin import AIOKafkaAdminClient
+        bootstrap = self.settings.redpanda.bootstrap_servers
+        admin = AIOKafkaAdminClient(
+            bootstrap_servers=bootstrap,
+            client_id="alpha-panda-health-admin",
+        )
+        try:
+            await admin.start()
+            existing_topics = await admin.list_topics()
+            missing = [t for t in topics if t not in existing_topics]
+            return missing
+        except Exception:
+            # On error, consider all topics missing to force visibility
+            return topics
+        finally:
+            try:
+                await admin.close()
+            except Exception:
+                pass
+
+    def _compute_expectations(self, topics: List[str], base_configs: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+        """Compute expected minimal partitions and RF per topic using environment overlays."""
+        env = str(self.settings.environment).lower()
+        if '.' in env:
+            env = env.split('.')[-1]
+        broker_count = int(os.getenv("REDPANDA_BROKER_COUNT", "1"))
+        multiplier = float(os.getenv("TOPIC_PARTITIONS_MULTIPLIER", "1.0"))
+
+        expectations: Dict[str, Dict[str, int]] = {}
+        for t in topics:
+            cfg = base_configs.get(t, {"partitions": 1, "replication_factor": 1})
+            base_partitions = int(cfg.get("partitions", 1))
+            base_rf = int(cfg.get("replication_factor", 1))
+            # Partitions overlay
+            from math import ceil
+            expected_partitions = max(1, int(ceil(base_partitions * max(0.1, multiplier))))
+            # RF overlay
+            if env == "production":
+                expected_rf = 3 if broker_count >= 3 else max(1, broker_count)
+            else:
+                expected_rf = max(1, min(base_rf, broker_count)) if broker_count > 0 else base_rf
+            expectations[t] = {"partitions": expected_partitions, "replication_factor": expected_rf}
+        return expectations
+
+    async def _check_topic_capacity(self, topics: List[str], expectations: Dict[str, Dict[str, int]]) -> Dict[str, str]:
+        """Check topic partitions and RF using Kafka admin describe_topics."""
+        from aiokafka.admin import AIOKafkaAdminClient
+        bootstrap = self.settings.redpanda.bootstrap_servers
+        issues: Dict[str, str] = {}
+        admin = AIOKafkaAdminClient(
+            bootstrap_servers=bootstrap,
+            client_id="alpha-panda-health-admin",
+        )
+        try:
+            await admin.start()
+            desc = await admin.describe_topics(topics)
+            # desc is list of TopicDescription-like objects
+            for td in desc:
+                name = getattr(td, "topic", None) or getattr(td, "name", None)
+                if not name:
+                    continue
+                parts = getattr(td, "partitions", [])
+                partition_count = len(parts) if parts else 0
+                # RF: take replicas of first partition
+                rf = 0
+                if parts:
+                    first = parts[0]
+                    replicas = getattr(first, "replicas", [])
+                    rf = len(replicas) if replicas is not None else 0
+                exp = expectations.get(name, {"partitions": 1, "replication_factor": 1})
+                reasons = []
+                if partition_count < exp["partitions"]:
+                    reasons.append(f"partitions {partition_count} < expected {exp['partitions']}")
+                if rf < exp["replication_factor"]:
+                    reasons.append(f"RF {rf} < expected {exp['replication_factor']}")
+                if reasons:
+                    issues[name] = "; ".join(reasons)
+        except Exception:
+            # On error, return generic issue to surface visibility
+            for t in topics:
+                issues[t] = "unable to describe topic; check admin permissions/connectivity"
+        finally:
+            try:
+                await admin.close()
+            except Exception:
+                pass
+        return issues
 
 class BrokerStateHealthCheck(MultiBrokerHealthCheck):
     """Check broker-specific state and configuration."""

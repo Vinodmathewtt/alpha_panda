@@ -3,13 +3,13 @@ Lifecycle management for streaming components to ensure proper cleanup.
 This addresses the unclosed AIOKafkaProducer/Consumer warnings.
 """
 import asyncio
-import logging
+from core.logging import get_logger
 from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
 from aiokafka.errors import KafkaError
 
-logger = logging.getLogger(__name__)
+logger = get_logger("core.streaming.lifecycle_manager", component="streaming")
 
 
 class StreamingLifecycleManager:

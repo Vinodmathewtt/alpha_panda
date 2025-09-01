@@ -1,0 +1,20 @@
+{
+  "type": "record",
+  "name": "EventEnvelope",
+  "namespace": "alpha.panda",
+  "fields": [
+    {"name": "id", "type": "string"},
+    {"name": "correlation_id", "type": "string"},
+    {"name": "causation_id", "type": ["null", "string"], "default": null},
+    {"name": "trace_id", "type": "string"},
+    {"name": "parent_trace_id", "type": ["null", "string"], "default": null},
+    {"name": "broker", "type": "string"},
+    {"name": "type", "type": "string"},
+    {"name": "ts", "type": "string"},
+    {"name": "key", "type": "string"},
+    {"name": "source", "type": "string"},
+    {"name": "version", "type": "int", "default": 1},
+    {"name": "data", "type": ["null", "string"], "default": null}
+  ]
+}
+

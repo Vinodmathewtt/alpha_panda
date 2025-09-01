@@ -19,10 +19,10 @@ class MockAlertManager:
             {
                 "id": str(uuid.uuid4()),
                 "title": "High Memory Usage",
-                "message": "Trading Engine Service memory usage above 90%",
+                "message": "Paper Trading Service memory usage above 90%",
                 "severity": "warning",
                 "category": "performance",
-                "component": "trading_engine_service",
+                "component": "paper_trading_service",
                 "status": "active",
                 "created_at": (datetime.utcnow() - timedelta(hours=2)).isoformat(),
                 "acknowledged_at": None,

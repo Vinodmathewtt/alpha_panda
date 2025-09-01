@@ -8,11 +8,9 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-import logging
+from core.logging import get_market_data_logger_safe
 
-import structlog
-
-logger = structlog.get_logger(__name__)
+logger = get_market_data_logger_safe("instrument_registry_service")
 from .instrument import Instrument, InstrumentRegistry
 from .instrument_repository import InstrumentRepository, InstrumentRegistryRepository
 from .csv_loader import InstrumentCSVLoader
@@ -33,7 +31,7 @@ class InstrumentRegistryService:
         """Initialize the instrument registry service."""
         self._session_factory = session_factory
         self.csv_file_path = csv_file_path or "services/market_feed/instruments.csv"
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_market_data_logger_safe("instrument_registry_service")
         self._instrument_repo: Optional[InstrumentRepository] = None
         self._registry_repo: Optional[InstrumentRegistryRepository] = None
     

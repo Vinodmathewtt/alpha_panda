@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'alpha-panda-dashboards'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: true
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+      # Look for JSON changes every 10s
+      updateIntervalSeconds: 10

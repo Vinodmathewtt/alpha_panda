@@ -1,14 +1,24 @@
 import uvicorn
+import logging
+from logging.config import dictConfig
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+try:
+    from fastapi.responses import ORJSONResponse  # type: ignore
+    _HAS_ORJSON = True
+except Exception:  # pragma: no cover
+    ORJSONResponse = None  # type: ignore
+    _HAS_ORJSON = False
 from dependency_injector.wiring import inject
 from contextlib import asynccontextmanager
 import structlog
+from core.logging import get_api_logger_safe, configure_logging
 from datetime import datetime
 
 from app.containers import AppContainer
 from api.middleware.auth import AuthenticationMiddleware
+from api.middleware.request_ids import RequestIdMiddleware
 from api.middleware.error_handling import ErrorHandlingMiddleware
 from api.middleware.rate_limiting import RateLimitingMiddleware
 from api.routers import (
@@ -16,8 +26,10 @@ from api.routers import (
     logs, alerts, realtime, system
 )
 from dashboard.routers import main as dashboard_main, realtime as dashboard_realtime
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from core.observability.tracing import init_tracing
 
-logger = structlog.get_logger()
+logger = get_api_logger_safe("api.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,8 +58,31 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Error during API shutdown", error=str(e))
 
+def _build_uvicorn_log_config() -> dict:
+    """Return a minimal log config that cooperates with our structlog handlers.
+
+    Important: Do NOT set explicit handler lists here. Uvicorn applies this
+    dictConfig at startup, which would otherwise clear handlers that our
+    enhanced logging already attached to uvicorn/fastapi loggers. We only set
+    levels and propagation; handlers remain as wired by EnhancedLogger.
+    """
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "loggers": {
+            # Keep handlers intact; set levels and turn off propagation so
+            # records are handled by our API channel without duplication.
+            "uvicorn": {"level": "INFO", "propagate": False},
+            "uvicorn.error": {"level": "INFO", "propagate": False},
+            "uvicorn.access": {"level": "INFO", "propagate": False},
+            "fastapi": {"level": "INFO", "propagate": False},
+        },
+    }
+
+
 def create_app() -> FastAPI:
     """Creates and configures the FastAPI application"""
+    default_response_class = ORJSONResponse if _HAS_ORJSON else JSONResponse
     app = FastAPI(
         title="Alpha Panda Trading API",
         version="2.1.0",
@@ -77,12 +112,28 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
-        lifespan=lifespan
+        lifespan=lifespan,
+        default_response_class=default_response_class,
     )
 
     # Create and store DI container
     container = AppContainer()
     app.state.container = container
+
+    # Configure logging for API context (idempotent)
+    try:
+        configure_logging(container.settings())
+    except Exception:
+        pass
+
+    # Use DI: shared Prometheus registry from container
+    app.state.prom_registry = container.prometheus_registry()
+
+    # Initialize tracing if enabled (safe no-op otherwise)
+    try:
+        init_tracing(container.settings(), service_name="alpha-panda-api")
+    except Exception:
+        pass
     
     # Wire dependency injection
     container.wire(modules=[
@@ -101,6 +152,8 @@ def create_app() -> FastAPI:
     ])
 
     # Add middleware (order matters - first added is outermost, executed first)
+    # Attach request IDs + correlation before error handling and auth
+    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(ErrorHandlingMiddleware)
     
     # Add authentication middleware
@@ -171,6 +224,18 @@ def create_app() -> FastAPI:
             }
         }
 
+    # Prometheus metrics endpoint
+    @app.get("/metrics", tags=["Monitoring"])  # Exposed for Prometheus scraping
+    def metrics():
+        try:
+            # For now, expose the shared registry (collectors can register to it)
+            data = generate_latest(app.state.prom_registry)
+            return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+        except Exception as e:
+            logger.error("Failed to generate Prometheus metrics", error=str(e))
+            # Minimal failure response to prevent scraper from crashing
+            return Response(content=b"", media_type=CONTENT_TYPE_LATEST)
+
     # Root endpoint
     @app.get("/", tags=["Root"])
     def root():
@@ -209,12 +274,20 @@ def run():
     app = create_app()
     
     # Run with uvicorn
+    # Install uvloop if available for performance
+    try:
+        import uvloop  # type: ignore
+        uvloop.install()
+    except Exception:
+        pass
     uvicorn.run(
         app, 
         host="0.0.0.0", 
         port=8000,
         log_level="info",
         access_log=True,
+        access_log_format='h=%(h)s r="%(r)s" s=%(s)s L=%(L)f a="%(a)s"',
+        log_config=_build_uvicorn_log_config(),
         reload=False  # Set to True for development
     )
 

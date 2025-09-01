@@ -47,16 +47,18 @@ python cli.py seed              # Seed data manually
 1. **Virtual Environment**: Always activate the virtual environment before running any Python commands or operations
 2. **Docker Compose Command**: Always use `docker compose` (with space) instead of `docker-compose` (deprecated)
 
-### Adding New Features (Following docs patterns)
+### Adding New Features (Following Modern Architecture Patterns)
 1. **Event Schema First**: Define new events in `core/schemas/events.py` with EventEnvelope
-2. **Topic Definition**: Add new topics to `core/schemas/topics.py` with partition strategy
-3. **Service Implementation**: Create new service inheriting from StreamProcessor
-4. **Broker Authentication**: Use `BrokerAuthenticator` for Zerodha KiteConnect integration
-5. **User Authentication**: Use `AuthService` with JWT for API endpoints
-6. **Pure Strategy Logic**: Keep business logic in `strategies/` with Pydantic models
-7. **Configuration**: Store dynamic config in PostgreSQL, static in settings
-8. **API Integration**: Read-only endpoints serving from Redis cache
-9. **Testing**: Unit test strategies, integration test with real infrastructure
+2. **Topic Definition**: Add new topics to `core/schemas/topics.py` with broker-prefixed naming
+3. **Modern Service Implementation**: Use StreamServiceBuilder pattern for composition-based services
+4. **Protocol Contracts**: Use `typing.Protocol` for interfaces instead of inheritance
+5. **Broker Authentication**: Use `AuthService` for Zerodha KiteConnect integration
+6. **User Authentication**: Use JWT for API endpoints
+7. **Composition-Based Strategies**: Prefer composition + protocols over inheritance in `strategies/`
+8. **Configuration Management**: Use `core/config/` patterns with Pydantic settings
+9. **Multi-Broker Support**: Design with `ACTIVE_BROKERS` configuration from the start
+10. **API Integration**: Read-only endpoints serving from broker-segregated Redis cache
+11. **Comprehensive Testing**: Unit tests + integration tests with real infrastructure
 
 ## Development Philosophy
 
@@ -99,10 +101,23 @@ python cli.py seed              # Seed data manually
 - Seed test data for development (`make seed`)
 - Start Redpanda Console for debugging: `docker compose --profile console up -d`
 
-## Zerodha KiteConnect SDK Reference
+## Documentation References
 
+### Module Documentation
+**Comprehensive Documentation**: All modules now have complete README.md files:
+- [Core Modules](../core/README.md) - Shared libraries and architectural patterns
+- [Services](../services/README.md) - Stream processing microservices
+- [Strategies](../strategies/README.md) - Strategy framework and composition patterns
+- [Authentication](../services/auth/README.md) - Multi-provider authentication
+- [Configuration](../core/config/README.md) - Settings and environment management
+
+### Architecture Patterns
+- [Multi-Broker Architecture](../docs/architecture/MULTI_BROKER_ARCHITECTURE.md) - Unified deployment patterns
+- [Python Development Policies](../docs/development/PYTHON_DEVELOPMENT_POLICIES.md) - Composition-first guidelines
+
+### Zerodha KiteConnect SDK Reference
 **CRITICAL**: For all Zerodha KiteConnect API integrations, refer to the PyKiteConnect SDK copy located at `examples/pykiteconnect-zerodha-python-sdk-for-reference/`. Consult whenever:
 - Implementing new Zerodha API integration components
-- Reviewing existing KiteConnect integration code
+- Reviewing existing KiteConnect integration code  
 - Understanding API patterns, authentication flows, and data structures
 - Troubleshooting Zerodha-specific implementation issues

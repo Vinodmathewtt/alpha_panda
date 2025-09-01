@@ -3,7 +3,7 @@ Base service class for standardized service lifecycle management.
 """
 
 import asyncio
-import logging
+from core.logging import get_logger
 from abc import ABC, abstractmethod
 from typing import Optional, Any, Dict
 from enum import Enum
@@ -23,7 +23,8 @@ class BaseService(ABC):
     
     def __init__(self, service_name: str, redis_client=None):
         self.service_name = service_name
-        self.logger = logging.getLogger(f"alpha_panda.{service_name}")
+        # Use component-aware logger to route to proper channel
+        self.logger = get_logger(f"alpha_panda.{service_name}", component=service_name)
         self.status = ServiceStatus.STOPPED
         self._startup_time = None
         self._shutdown_event = asyncio.Event()

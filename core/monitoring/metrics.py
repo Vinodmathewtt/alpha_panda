@@ -14,9 +14,9 @@ import statistics
 from dataclasses import dataclass, field
 from enum import Enum
 import redis.asyncio as redis
-import logging
+from core.logging import get_monitoring_logger_safe
 
-logger = logging.getLogger(__name__)
+logger = get_monitoring_logger_safe("monitoring.metrics")
 
 
 class MetricType(Enum):

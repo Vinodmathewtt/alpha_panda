@@ -1,0 +1,80 @@
+{
+  "title": "Alpha Panda - Service Metrics",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "Events Processed",
+      "targets": [
+        {"expr": "sum(rate(trading_events_processed_total[1m])) by (service, broker, event_type)", "legendFormat": "{{service}} {{broker}} {{event_type}}"}
+      ],
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "DLQ Messages",
+      "targets": [
+        {"expr": "sum(rate(trading_dlq_messages_total[1m])) by (service, broker)", "legendFormat": "{{service}} {{broker}}"}
+      ],
+      "gridPos": {"x": 0, "y": 8, "w": 24, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "Market Ticks",
+      "targets": [
+        {"expr": "sum(rate(market_ticks_received_total[1m])) by (source)", "legendFormat": "{{source}}"}
+      ],
+      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "Paper Trading - Events",
+      "targets": [
+        {"expr": "sum(rate(trading_events_processed_total{service=\"paper_trading\"}[1m])) by (broker, event_type)", "legendFormat": "{{broker}} {{event_type}}"}
+      ],
+      "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "Zerodha Trading - Events",
+      "targets": [
+        {"expr": "sum(rate(trading_events_processed_total{service=\"zerodha_trading\"}[1m])) by (broker, event_type)", "legendFormat": "{{broker}} {{event_type}}"}
+      ],
+      "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "DLQ Rate (Trading Services)",
+      "targets": [
+        {"expr": "sum(rate(trading_dlq_messages_total{service=~\"paper_trading|zerodha_trading\"}[5m])) by (service, broker)", "legendFormat": "{{service}} {{broker}}"}
+      ],
+      "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8}
+    },
+    {
+      "type": "stat",
+      "title": "Paper Orders Inactivity (sec)",
+      "targets": [
+        {"expr": "time() - trading_last_activity_timestamp_unix{service=\"paper_trading\",stage=\"orders\",broker=\"paper\"}", "legendFormat": "inactivity"}
+      ],
+      "gridPos": {"x": 12, "y": 32, "w": 6, "h": 4}
+    },
+    {
+      "type": "stat",
+      "title": "Zerodha Orders Inactivity (sec)",
+      "targets": [
+        {"expr": "time() - trading_last_activity_timestamp_unix{service=\"zerodha_trading\",stage=\"orders\",broker=\"zerodha\"}", "legendFormat": "inactivity"}
+      ],
+      "gridPos": {"x": 18, "y": 32, "w": 6, "h": 4}
+    },
+    {
+      "type": "graph",
+      "title": "Consumer Lag (paper/zerodha)",
+      "targets": [
+        {"expr": "max(kafka_consumergroup_lag{group=~\".*(paper_trading|zerodha_trading).*\"}) by (group,topic)", "legendFormat": "{{group}} {{topic}}"}
+      ],
+      "gridPos": {"x": 0, "y": 40, "w": 24, "h": 8}
+    }
+  ],
+  "schemaVersion": 36,
+  "version": 1
+}

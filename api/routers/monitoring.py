@@ -10,23 +10,29 @@ from datetime import datetime, timezone
 
 from core.config.settings import Settings
 from core.health import ServiceHealthChecker
-from core.monitoring import PipelineMonitor, PipelineMetricsCollector
-from api.dependencies import get_settings, get_redis_client
-from core.logging.enhanced_logging import get_api_logger, get_performance_logger, get_error_logger
+from api.dependencies import get_health_checker
+from core.monitoring import PipelineMonitor
+from api.dependencies import get_settings, get_redis_client, get_pipeline_metrics_collector
+from core.logging import (
+    get_api_logger_safe,
+    get_performance_logger_safe,
+    get_error_logger_safe,
+)
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
 # Initialize loggers
-api_logger = get_api_logger("monitoring_api")
-performance_logger = get_performance_logger("monitoring_performance")
-error_logger = get_error_logger("monitoring_errors")
+api_logger = get_api_logger_safe("monitoring_api")
+performance_logger = get_performance_logger_safe("monitoring_performance")
+error_logger = get_error_logger_safe("monitoring_errors")
 
 
 @router.get("/health")
 async def health_check(
     request: Request,
     settings: Settings = Depends(get_settings),
-    redis_client: redis.Redis = Depends(get_redis_client)
+    redis_client: redis.Redis = Depends(get_redis_client),
+    health_checker: ServiceHealthChecker = Depends(get_health_checker),
 ) -> Dict[str, Any]:
     """Get overall system health"""
     start_time = time.time()
@@ -38,7 +44,6 @@ async def health_check(
                    method="GET")
     
     try:
-        health_checker = ServiceHealthChecker(settings)
         await health_checker.start()
         
         health_status = await health_checker.get_overall_health()
@@ -91,7 +96,8 @@ async def health_check(
 async def pipeline_status(
     request: Request,
     settings: Settings = Depends(get_settings),
-    redis_client: redis.Redis = Depends(get_redis_client)
+    redis_client: redis.Redis = Depends(get_redis_client),
+    metrics_collector = Depends(get_pipeline_metrics_collector),
 ) -> Dict[str, Any]:
     """Get pipeline flow status and metrics"""
     start_time = time.time()
@@ -118,8 +124,7 @@ async def pipeline_status(
                 "message": "No recent pipeline validation data available"
             }
         
-        # Get pipeline health metrics
-        metrics_collector = PipelineMetricsCollector(redis_client, settings)
+        # Get pipeline health metrics via DI collector
         health_data = await metrics_collector.get_pipeline_health()
         
         processing_time = (time.time() - start_time) * 1000
@@ -169,7 +174,8 @@ async def pipeline_status(
 async def pipeline_history(
     limit: int = 50,
     settings: Settings = Depends(get_settings),
-    redis_client: redis.Redis = Depends(get_redis_client)
+    redis_client: redis.Redis = Depends(get_redis_client),
+    health_checker: ServiceHealthChecker = Depends(get_health_checker),
 ) -> Dict[str, Any]:
     """Get pipeline health history"""
     try:
@@ -310,11 +316,11 @@ async def log_statistics(
 @router.post("/pipeline/reset")
 async def reset_pipeline_metrics(
     settings: Settings = Depends(get_settings),
-    redis_client: redis.Redis = Depends(get_redis_client)
+    redis_client: redis.Redis = Depends(get_redis_client),
+    metrics_collector = Depends(get_pipeline_metrics_collector),
 ) -> Dict[str, Any]:
     """Reset pipeline metrics (useful for testing)"""
     try:
-        metrics_collector = PipelineMetricsCollector(redis_client, settings)
         await metrics_collector.reset_metrics()
         
         return {
@@ -334,7 +340,8 @@ async def reset_pipeline_metrics(
 async def get_metrics_summary(
     request: Request,
     settings: Settings = Depends(get_settings),
-    redis_client: redis.Redis = Depends(get_redis_client)
+    redis_client: redis.Redis = Depends(get_redis_client),
+    metrics_collector = Depends(get_pipeline_metrics_collector),
 ) -> Dict[str, Any]:
     """Get overall metrics summary"""
     start_time = time.time()
@@ -346,7 +353,6 @@ async def get_metrics_summary(
                    method="GET")
     
     try:
-        metrics_collector = PipelineMetricsCollector(redis_client, settings)
         health_data = await metrics_collector.get_pipeline_health()
         
         # Calculate summary statistics
@@ -418,7 +424,8 @@ async def health_check_history(
     check_name: Optional[str] = None,
     limit: int = 50,
     settings: Settings = Depends(get_settings),
-    redis_client: redis.Redis = Depends(get_redis_client)
+    redis_client: redis.Redis = Depends(get_redis_client),
+    health_checker: ServiceHealthChecker = Depends(get_health_checker),
 ) -> Dict[str, Any]:
     """Get health check history from Redis"""
     start_time = time.time()
@@ -433,10 +440,6 @@ async def health_check_history(
                    limit=limit)
     
     try:
-        from core.health.health_checker import ServiceHealthChecker
-        
-        # Create temporary health checker to access history methods
-        health_checker = ServiceHealthChecker(settings, redis_client=redis_client)
         history = await health_checker.get_health_history(component, check_name, limit)
         
         processing_time = (time.time() - start_time) * 1000
@@ -493,7 +496,8 @@ async def service_health_check(
     service_name: str,
     request: Request,
     settings: Settings = Depends(get_settings),
-    redis_client: redis.Redis = Depends(get_redis_client)
+    redis_client: redis.Redis = Depends(get_redis_client),
+    health_checker: ServiceHealthChecker = Depends(get_health_checker),
 ) -> Dict[str, Any]:
     """Get health status for a specific service"""
     start_time = time.time()
@@ -506,12 +510,11 @@ async def service_health_check(
                    service_name=service_name)
     
     try:
-        from core.health.health_checker import ServiceHealthChecker
-        
         # Validate service name
         valid_services = [
-            "risk_manager", "trading_engine", "portfolio_manager", 
-            "strategy_runner", "market_feed", "auth", "api"
+            "risk_manager", 
+            "strategy_runner", "market_feed", "auth", "api",
+            "paper_trading", "zerodha_trading",
         ]
         
         if service_name not in valid_services:
@@ -520,8 +523,7 @@ async def service_health_check(
                 detail=f"Invalid service name. Valid services: {valid_services}"
             )
         
-        # Create health checker and run service-specific checks
-        health_checker = ServiceHealthChecker(settings, redis_client=redis_client)
+        # Run service-specific checks using DI-provided health checker
         await health_checker.start()
         
         # Filter health checks for specific service

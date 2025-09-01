@@ -2,12 +2,12 @@
 
 """Zerodha KiteConnect integration utilities."""
 
-import logging
+from core.logging import get_api_logger_safe
 from typing import Any, Dict, Optional
 from core.config.settings import Settings
 from .exceptions import AuthenticationError
 
-logger = logging.getLogger(__name__)
+logger = get_api_logger_safe("kite_client")
 
 try:
     from kiteconnect import KiteConnect

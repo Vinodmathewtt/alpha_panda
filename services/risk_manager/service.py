@@ -8,6 +8,8 @@ from core.config.settings import RedpandaSettings, Settings
 from core.logging import get_trading_logger_safe, get_performance_logger_safe, get_error_logger_safe
 from core.logging.service_logger import get_service_logger
 from core.monitoring import PipelineMetricsCollector
+from core.monitoring.prometheus_metrics import PrometheusMetricsCollector
+from core.observability.tracing import get_tracer
 from .rules import RiskRuleEngine
 from .state import RiskStateManager
 
@@ -15,7 +17,7 @@ from .state import RiskStateManager
 class RiskManagerService:
     """Validates trading signals against risk rules for all active brokers"""
     
-    def __init__(self, config: RedpandaSettings, settings: Settings, redis_client=None):
+    def __init__(self, config: RedpandaSettings, settings: Settings, redis_client=None, prometheus_metrics: PrometheusMetricsCollector = None):
         self.settings = settings
         self.config = config
         
@@ -35,6 +37,7 @@ class RiskManagerService:
         self.error_count = 0
         self.validation_start_time = None
         self.metrics_collector = PipelineMetricsCollector(redis_client, settings)
+        self.prom_metrics: PrometheusMetricsCollector | None = prometheus_metrics
         
         
         # --- REFACTORED: Multi-broker topic subscription ---
@@ -46,6 +49,7 @@ class RiskManagerService:
         
         # Build streaming service using composition with topic-aware handlers
         self.orchestrator = (StreamServiceBuilder("risk_manager", config, settings)
+            .with_prometheus(prometheus_metrics)
             .with_redis(redis_client)
             .with_error_handling()
             .with_metrics()
@@ -72,24 +76,51 @@ class RiskManagerService:
         
         await self.orchestrator.start()
         self.logger.info(f"🛡️ Risk Manager started for brokers: {self.settings.active_brokers}")
+        if self.prom_metrics:
+            try:
+                for broker in self.settings.active_brokers:
+                    self.prom_metrics.set_pipeline_health("risk_manager", broker, True)
+            except Exception:
+                pass
     
     async def stop(self):
         """Stop the risk manager service"""
         await self.orchestrator.stop()
         await self.state_manager.close()
         self.logger.info(f"🛡️ Risk Manager stopped for brokers: {self.settings.active_brokers}")
+        if self.prom_metrics:
+            try:
+                for broker in self.settings.active_brokers:
+                    self.prom_metrics.set_pipeline_health("risk_manager", broker, False)
+            except Exception:
+                pass
     
+    def _is_event_type(self, message: Dict[str, Any], et: EventType) -> bool:
+        t = message.get('type')
+        if isinstance(t, EventType):
+            return t == et
+        if isinstance(t, str):
+            return t == et or t == et.value or t.lower() == et.value
+        return False
+
     async def _handle_message(self, message: Dict[str, Any], topic: str) -> None:
         """Handle incoming messages with broker context from topic."""
+        tracer = get_tracer("risk_manager")
         # Extract broker from topic name using robust parsing
         broker = TopicMap.get_broker_from_topic(topic)
         
         # Extract key based on message type
-        if message.get('type') == EventType.TRADING_SIGNAL:
+        if self._is_event_type(message, EventType.TRADING_SIGNAL):
             data = message.get('data', {})
             key = f"{data.get('strategy_id', '')}:{data.get('instrument_token', '')}"
-            await self._handle_trading_signal(key, message, broker)
-        elif message.get('type') == EventType.MARKET_TICK:
+            with tracer.start_as_current_span("risk.validate_signal") as span:
+                try:
+                    span.set_attribute("broker", broker)
+                    span.set_attribute("key", key)
+                except Exception:
+                    pass
+                await self._handle_trading_signal(key, message, broker)
+        elif self._is_event_type(message, EventType.MARKET_TICK):
             await self._handle_market_tick(message)
         else:
             self.error_logger.warning("Unknown message type received",
@@ -102,7 +133,7 @@ class RiskManagerService:
     async def _handle_trading_signal(self, key: str, message: Dict[str, Any], broker: str):
         """Validate trading signal against risk rules"""
         
-        if message.get("type") != EventType.TRADING_SIGNAL:
+        if not self._is_event_type(message, EventType.TRADING_SIGNAL):
             self.logger.warning("Invalid message type for trading signal", message_type=message.get("type"))
             return
             
@@ -163,12 +194,17 @@ class RiskManagerService:
                                   strategy_id=signal_data.get("strategy_id"),
                                   error=str(e),
                                   broker=broker)
+            if self.prom_metrics:
+                try:
+                    self.prom_metrics.record_error("risk_manager", type(e).__name__, broker)
+                except Exception:
+                    pass
             raise
     
     async def _handle_market_tick(self, message: Dict[str, Any]):
         """Update recent prices from market ticks"""
-        
-        if message.get("type") != EventType.MARKET_TICK:
+        # Accept both enum and string types robustly
+        if not self._is_event_type(message, EventType.MARKET_TICK):
             return
             
         tick_data = message.get("data", {})
@@ -184,7 +220,7 @@ class RiskManagerService:
     async def _emit_validated_signal(self, key: str, signal_data: Dict[str, Any], 
                                    validation_result: Dict[str, Any], broker: str):
         """Emit validated signal"""
-        
+        tracer = get_tracer("risk_manager")
         try:
             # Create TradingSignal from data
             original_signal = TradingSignal(**signal_data)
@@ -203,10 +239,21 @@ class RiskManagerService:
             validated_topic = topic_map.signals_validated()
             
             # Emit using generic helper method
-            await self._emit_signal(key, validated_topic, validated_signal.model_dump(mode='json'), EventType.VALIDATED_SIGNAL, broker)
+            with tracer.start_as_current_span("risk.emit_validated") as span:
+                try:
+                    span.set_attribute("broker", broker)
+                    span.set_attribute("topic", validated_topic)
+                except Exception:
+                    pass
+                await self._emit_signal(key, validated_topic, validated_signal.model_dump(mode='json'), EventType.VALIDATED_SIGNAL, broker)
             
             # Record metrics for pipeline monitoring
-            await self.metrics_collector.record_signal_validated(signal_data, passed=True)
+            await self.metrics_collector.record_signal_validated(signal_data, passed=True, broker_context=broker)
+            if self.prom_metrics:
+                try:
+                    self.prom_metrics.record_event_processed("risk_manager", broker, EventType.VALIDATED_SIGNAL.value)
+                except Exception:
+                    pass
         except Exception as e:
             self.logger.error(f"Failed to get producer for validated signal emission: {e}")
             raise
@@ -224,7 +271,7 @@ class RiskManagerService:
     async def _emit_rejected_signal(self, key: str, signal_data: Dict[str, Any], 
                                   validation_result: Dict[str, Any], broker: str):
         """Emit rejected signal"""
-        
+        tracer = get_tracer("risk_manager")
         try:
             # Create TradingSignal from data
             original_signal = TradingSignal(**signal_data)
@@ -242,10 +289,21 @@ class RiskManagerService:
             rejected_topic = topic_map.signals_rejected()
             
             # Emit using generic helper method  
-            await self._emit_signal(key, rejected_topic, rejected_signal.model_dump(mode='json'), EventType.REJECTED_SIGNAL, broker)
+            with tracer.start_as_current_span("risk.emit_rejected") as span:
+                try:
+                    span.set_attribute("broker", broker)
+                    span.set_attribute("topic", rejected_topic)
+                except Exception:
+                    pass
+                await self._emit_signal(key, rejected_topic, rejected_signal.model_dump(mode='json'), EventType.REJECTED_SIGNAL, broker)
             
             # Record metrics for pipeline monitoring
-            await self.metrics_collector.record_signal_validated(signal_data, passed=False)
+            await self.metrics_collector.record_signal_validated(signal_data, passed=False, broker_context=broker)
+            if self.prom_metrics:
+                try:
+                    self.prom_metrics.record_event_processed("risk_manager", broker, EventType.REJECTED_SIGNAL.value)
+                except Exception:
+                    pass
         except Exception as e:
             self.logger.error(f"Failed to get producer for rejected signal emission: {e}")
             raise

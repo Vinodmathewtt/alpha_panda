@@ -1,7 +1,7 @@
 # alphaP/services/auth/service.py
 
 import asyncio
-import logging
+from core.logging import get_api_logger_safe
 from typing import Optional
 
 from core.config.settings import Settings
@@ -9,7 +9,7 @@ from core.database.connection import DatabaseManager
 from .auth_manager import AuthManager
 from .models import LoginRequest, LoginResponse, AuthProvider, AuthStatus, UserProfile
 
-logger = logging.getLogger(__name__)
+logger = get_api_logger_safe("auth_service")
 
 class AuthService:
     """High-level authentication service for managing trading sessions."""
