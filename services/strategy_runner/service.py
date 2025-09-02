@@ -142,6 +142,20 @@ class StrategyRunnerService:
         # Only use database strategies - no YAML fallback in composition architecture
         
         self.logger.info(f"Total strategies loaded: {strategies_loaded}")
+
+        # Record per-broker active strategy counts for validator context (no warnings when none configured)
+        try:
+            if self.metrics_collector:
+                per_broker_counts: Dict[str, int] = {b: 0 for b in self.active_brokers}
+                for executor in self.strategy_executors.values():
+                    for b in getattr(executor.config, 'active_brokers', []):
+                        if b in per_broker_counts:
+                            per_broker_counts[b] += 1
+                for broker, cnt in per_broker_counts.items():
+                    await self.metrics_collector.set_strategy_count(broker, cnt)
+                self.logger.info("Recorded per-broker active strategy counts", counts=per_broker_counts)
+        except Exception as e:
+            self.logger.warning("Failed to record strategy counts", error=str(e))
     
     async def stop(self):
         """Stop the strategy runner service"""

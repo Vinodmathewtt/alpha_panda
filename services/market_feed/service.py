@@ -77,7 +77,18 @@ class MarketFeedService:
         
         # ADDED: Components for reliability
         self._reconnection_lock = asyncio.Lock()
-        self._tick_queue = asyncio.Queue(maxsize=10000)  # Bounded queue for backpressure
+        # Bounded queue for backpressure (configurable)
+        try:
+            qsize = int(getattr(getattr(settings, 'market_feed'), 'queue_maxsize'))
+        except Exception:
+            qsize = 10000
+        self._tick_queue = asyncio.Queue(maxsize=qsize)
+        # Optional enqueue block-with-timeout behavior (ms)
+        self._enqueue_block_timeout_ms = None
+        try:
+            self._enqueue_block_timeout_ms = getattr(getattr(settings, 'market_feed'), 'enqueue_block_timeout_ms')
+        except Exception:
+            self._enqueue_block_timeout_ms = None
         self._processor_task = None
         self._failed_sends = 0
         self._failed_metrics = 0
@@ -202,9 +213,11 @@ class MarketFeedService:
         self.logger.info("Tick processor worker started.")
         while True:
             try:
+                import time
                 tick = await self._tick_queue.get()
+                dequeued_at = time.perf_counter()
 
-                emit_coro = self._emit_tick(tick)
+                emit_coro = self._emit_tick(tick, dequeued_started_at=dequeued_at)
                 metrics_coro = self._update_metrics(tick)
 
                 # Use asyncio.gather for concurrent execution
@@ -217,11 +230,13 @@ class MarketFeedService:
             except Exception as e:
                 self.error_logger.error(f"Unhandled exception in tick processor: {e}", exc_info=True)
 
-    async def _emit_tick(self, tick: MarketTick):
+    async def _emit_tick(self, tick: MarketTick, dequeued_started_at: float | None = None):
         try:
             if self.orchestrator.producers and len(self.orchestrator.producers) > 0:
                 producer = self.orchestrator.producers[0]
                 key = PartitioningKeys.market_tick_key(tick.instrument_token)
+                import time
+                start = time.perf_counter()
                 await producer.send(
                     topic=TopicNames.MARKET_TICKS,
                     key=key,
@@ -229,6 +244,14 @@ class MarketFeedService:
                     event_type=EventType.MARKET_TICK,
                     broker="shared"  # Market data is shared across all brokers
                 )
+                # Record emit latency from dequeue to send completion
+                try:
+                    base = dequeued_started_at if dequeued_started_at is not None else start
+                    latency = time.perf_counter() - base
+                    if self.prom_metrics:
+                        self.prom_metrics.record_market_tick_emit_latency("market_feed", latency)
+                except Exception:
+                    pass
                 if self.prom_metrics:
                     try:
                         self.prom_metrics.record_event_processed("market_feed", "shared", EventType.MARKET_TICK.value)
@@ -359,16 +382,37 @@ class MarketFeedService:
 
                 # Thread-safe enqueue: KiteTicker callbacks run on a background thread.
                 # Use the event loop to safely schedule queue operations.
-                try:
+                # Enqueue strategy: either immediate drop-on-full or block-with-timeout
+                if self._enqueue_block_timeout_ms and self._enqueue_block_timeout_ms > 0 and hasattr(self, 'loop') and self.loop is not None:
+                    import time
+                    start = time.perf_counter()
+                    async def _put_with_timeout(t):
+                        await asyncio.wait_for(self._tick_queue.put(t), timeout=self._enqueue_block_timeout_ms / 1000.0)
+                    try:
+                        fut = asyncio.run_coroutine_threadsafe(_put_with_timeout(market_tick), self.loop)
+                        fut.result(timeout=self._enqueue_block_timeout_ms / 1000.0)
+                        delay = time.perf_counter() - start
+                        if self.prom_metrics:
+                            try:
+                                self.prom_metrics.record_market_tick_enqueue_delay("zerodha", delay)
+                            except Exception:
+                                pass
+                    except Exception:
+                        self._dropped_ticks += 1
+                        self.logger.warning(
+                            f"Tick queue full (blocked). Dropping tick after timeout. Total dropped: {self._dropped_ticks}")
+                else:
+                    def _enqueue_nowait(t):
+                        try:
+                            self._tick_queue.put_nowait(t)
+                        except asyncio.QueueFull:
+                            self._dropped_ticks += 1
+                            self.logger.warning(
+                                f"Tick queue is full. Dropping tick to maintain stability. Total dropped: {self._dropped_ticks}")
                     if hasattr(self, 'loop') and self.loop is not None:
-                        self.loop.call_soon_threadsafe(self._tick_queue.put_nowait, market_tick)
+                        self.loop.call_soon_threadsafe(_enqueue_nowait, market_tick)
                     else:
-                        # Fallback (should not happen post-start); best effort enqueue
-                        self._tick_queue.put_nowait(market_tick)
-                except asyncio.QueueFull:
-                    self._dropped_ticks += 1
-                    self.logger.warning(
-                        f"Tick queue is full. Dropping tick to maintain stability. Total dropped: {self._dropped_ticks}")
+                        _enqueue_nowait(market_tick)
                     
             except Exception as e:
                 self.logger.error(f"❌ Error processing tick: {tick}, Error: {e}")
@@ -386,10 +430,22 @@ class MarketFeedService:
                 "This indicates a failure in instrument loading during service initialization."
             )
         
-        # Subscribe to instruments
-        ws.subscribe(self.instrument_tokens)
-        # CRITICAL: Set FULL mode to capture complete data including market depth
-        ws.set_mode(ws.MODE_FULL, self.instrument_tokens)
+        # Subscribe to instruments (optionally in batches)
+        try:
+            batch_size = int(getattr(getattr(self.settings, 'market_feed'), 'subscription_batch_size'))
+        except Exception:
+            batch_size = 0
+
+        tokens = self.instrument_tokens
+        if batch_size and batch_size > 0:
+            self.logger.info(f"Subscribing in batches of {batch_size} to reduce pressure", total=len(tokens))
+            for i in range(0, len(tokens), batch_size):
+                chunk = tokens[i:i+batch_size]
+                ws.subscribe(chunk)
+                ws.set_mode(ws.MODE_FULL, chunk)
+        else:
+            ws.subscribe(tokens)
+            ws.set_mode(ws.MODE_FULL, tokens)
         self.logger.info(f"📊 Subscribed to {len(self.instrument_tokens)} instruments in FULL mode (complete data + 5-level depth)")
 
     def _on_close(self, ws, code, reason):

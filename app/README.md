@@ -204,7 +204,6 @@ services:
 ### Environment Configuration
 ```bash
 # .env file requirements
-ZERODHA__ENABLED=true                    # MANDATORY
 ZERODHA__API_KEY=your_api_key           # MANDATORY  
 ZERODHA__API_SECRET=your_api_secret     # MANDATORY
 ACTIVE_BROKERS=paper,zerodha            # Unified multi-broker deployment
@@ -267,7 +266,7 @@ python cli.py seed      # Database seeding only
 
 # Solutions:
 ✅ Verify ZERODHA__API_KEY and ZERODHA__API_SECRET in .env
-✅ Ensure ZERODHA__ENABLED=true
+✅ Ensure Zerodha API key/secret are set and valid
 ✅ Complete interactive OAuth flow when prompted
 ✅ Check Zerodha API key permissions and quotas
 ```
@@ -384,12 +383,11 @@ Each broker namespace creates separate:
 
 ### Mock Mode (Development Only)
 ```bash
-# Disable Zerodha requirements for testing
-export ZERODHA__ENABLED=false
-export AUTH__ENABLE_USER_AUTH=false
+# To prevent live order placement while testing
+export TRADING__ZERODHA__ENABLED=false
 
-# This bypasses authentication but limits functionality
-# Market feed will use mock data instead of real Zerodha data
+# Note: Zerodha auth/feed remain required by design.
+# Use test credentials or a non-interactive access token for CI.
 ```
 
 ### API Testing

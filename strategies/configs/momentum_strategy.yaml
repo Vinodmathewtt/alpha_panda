@@ -1,6 +1,5 @@
 brokers:
 - paper
-- zerodha
 enabled: true
 instrument_tokens:
 - 256265

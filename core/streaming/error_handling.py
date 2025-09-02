@@ -299,11 +299,12 @@ class DLQPublisher:
             
             self._dlq_stats["messages_sent"] += 1
             
-            # Log to standard logger
+            # Log to standard logger with DLQ tagging
             logger.warning(
                 f"Message sent to DLQ: topic={dlq_topic}, reason={failure_reason}, "
                 f"error_type={error_type.value if error_type else 'unknown'}, "
-                f"retry_count={retry_count}"
+                f"retry_count={retry_count}",
+                extra={"dlq": True}
             )
             
             # Log DLQ event to error channel for tracking
@@ -318,7 +319,8 @@ class DLQPublisher:
                 error_message=str(error),
                 retry_count=retry_count,
                 timestamp=datetime.now(timezone.utc).isoformat(),
-                dlq_stats=self._dlq_stats
+                dlq_stats=self._dlq_stats,
+                dlq=True
             )
 
             # Notify optional callback for metrics
@@ -338,7 +340,7 @@ class DLQPublisher:
             self._dlq_stats["errors"] += 1
             
             # Log to standard logger
-            logger.error(f"Failed to send message to DLQ: {dlq_error}")
+            logger.error(f"Failed to send message to DLQ: {dlq_error}", extra={"dlq": True})
             
             # Log critical DLQ failure to error channel
             error_channel_logger.critical(
@@ -350,7 +352,8 @@ class DLQPublisher:
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 dlq_stats=self._dlq_stats,
                 message_key=message_key,
-                exc_info=True
+                exc_info=True,
+                dlq=True
             )
             
             # Critical: If we can't send to DLQ, we must not lose the message

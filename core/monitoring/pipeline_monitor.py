@@ -89,7 +89,7 @@ class PipelineMonitor:
                     
                     # Track overall health
                     broker_health = validation_results.get("overall_health", "unknown")
-                    if broker_health not in ["healthy", "warning"]:
+                    if broker_health not in ["healthy", "warning", "startup", "idle"]:
                         overall_healthy = False
                 
                     
@@ -101,6 +101,11 @@ class PipelineMonitor:
                                        broker=broker)
                     elif broker_health == "startup":
                         self.logger.debug("Pipeline validation in startup grace period",
+                                        validation_id=validation_results.get("validation_id"),
+                                        overall_health=broker_health,
+                                        broker=broker)
+                    elif broker_health == "idle":
+                        self.logger.info("Pipeline validation idle (market closed)",
                                         validation_id=validation_results.get("validation_id"),
                                         overall_health=broker_health,
                                         broker=broker)

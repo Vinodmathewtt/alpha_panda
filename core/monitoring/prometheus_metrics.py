@@ -12,8 +12,15 @@ from datetime import datetime
 class PrometheusMetricsCollector:
     """Production-ready metrics for Prometheus"""
     
-    def __init__(self, registry: Optional[CollectorRegistry] = None):
+    def __init__(self, registry: Optional[CollectorRegistry] = None, settings: Optional[Any] = None):
         self.registry = registry or CollectorRegistry()
+        # Optional bucket overrides from settings.monitoring.prometheus_buckets
+        buckets = None
+        try:
+            if settings and hasattr(settings, 'monitoring') and hasattr(settings.monitoring, 'prometheus_buckets'):
+                buckets = settings.monitoring.prometheus_buckets
+        except Exception:
+            buckets = None
         
         # Throughput metrics
         self.events_processed = Counter(
@@ -28,7 +35,9 @@ class PrometheusMetricsCollector:
             'trading_processing_latency_seconds',
             'Event processing latency',
             ['service', 'event_type'],
-            buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+            buckets=(getattr(buckets, 'processing_latency_seconds', None) if buckets else [
+                0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+            ]),
             registry=self.registry
         )
         
@@ -61,6 +70,25 @@ class PrometheusMetricsCollector:
             'Total market ticks received',
             ['source'],
             registry=self.registry
+        )
+        # Market data performance histograms
+        self.market_tick_enqueue_delay = Histogram(
+            'market_tick_enqueue_delay_seconds',
+            'Delay from websocket callback to queue enqueue',
+            ['source'],
+            buckets=(getattr(buckets, 'market_enqueue_delay_seconds', None) if buckets else [
+                0.0001, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5
+            ]),
+            registry=self.registry,
+        )
+        self.market_tick_emit_latency = Histogram(
+            'market_tick_emit_latency_seconds',
+            'Latency from dequeue to Kafka emission',
+            ['service'],
+            buckets=(getattr(buckets, 'market_emit_latency_seconds', None) if buckets else [
+                0.0001, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0
+            ]),
+            registry=self.registry,
         )
         
         # Strategy performance metrics
@@ -141,6 +169,20 @@ class PrometheusMetricsCollector:
     def record_market_tick(self, source: str = "zerodha"):
         """Record market tick received"""
         self.market_ticks_received.labels(source=source).inc()
+
+    def record_market_tick_enqueue_delay(self, source: str, delay_seconds: float):
+        """Record delay from callback until tick enqueued."""
+        try:
+            self.market_tick_enqueue_delay.labels(source=source).observe(delay_seconds)
+        except Exception:
+            pass
+
+    def record_market_tick_emit_latency(self, service: str, latency_seconds: float):
+        """Record latency from dequeue to Kafka send completion."""
+        try:
+            self.market_tick_emit_latency.labels(service=service).observe(latency_seconds)
+        except Exception:
+            pass
     
     def set_strategy_pnl(self, strategy_id: str, broker: str, pnl: float):
         """Set current strategy P&L"""

@@ -19,6 +19,7 @@ from datetime import datetime
 from app.containers import AppContainer
 from api.middleware.auth import AuthenticationMiddleware
 from api.middleware.request_ids import RequestIdMiddleware
+from api.middleware.route_templates import RouteTemplateMiddleware
 from api.middleware.error_handling import ErrorHandlingMiddleware
 from api.middleware.rate_limiting import RateLimitingMiddleware
 from api.routers import (
@@ -154,6 +155,7 @@ def create_app() -> FastAPI:
     # Add middleware (order matters - first added is outermost, executed first)
     # Attach request IDs + correlation before error handling and auth
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(RouteTemplateMiddleware)
     app.add_middleware(ErrorHandlingMiddleware)
     
     # Add authentication middleware

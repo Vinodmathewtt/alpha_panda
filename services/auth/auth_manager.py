@@ -51,14 +51,6 @@ class AuthManager:
         """
         logger.info("🔐 Starting MANDATORY Zerodha authentication...")
         
-        # Check if Zerodha is properly configured
-        if not self.settings.zerodha.enabled:
-            logger.critical("❌ CRITICAL: Zerodha integration is DISABLED")
-            logger.critical("💡 Alpha Panda requires Zerodha authentication to operate")
-            logger.critical("🔧 Please set ZERODHA__ENABLED=true in your .env file")
-            self._status = AuthStatus.ERROR
-            return False
-
         # Validate API credentials are provided
         if not self.settings.zerodha.api_key or not self.settings.zerodha.api_secret:
             logger.critical("❌ CRITICAL: Zerodha API credentials are missing")

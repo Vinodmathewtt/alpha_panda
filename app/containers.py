@@ -51,6 +51,7 @@ class AppContainer(containers.DeclarativeContainer):
     prometheus_metrics = providers.Singleton(
         PrometheusMetricsCollector,
         registry=prometheus_registry,
+        settings=settings,
     )
     
     # Database with environment awareness

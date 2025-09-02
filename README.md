@@ -65,6 +65,14 @@ API Service (Read Path - Unified)
 - **Market Data Shared**: A single Zerodha feed publishes `market.ticks` for all brokers to keep strategy behavior consistent.
 - **Deprecation Notice**: Any architectures that steer behavior via a global `broker_namespace` are transitional and should be refactored to explicit per‑broker topic routing. The `broker_namespace` identifier remains only for metrics namespacing/compatibility and may be removed in a future cleanup.
 
+## ✅ Recent Improvements
+- Trading flags unified: `TRADING__PAPER__ENABLED` and `TRADING__ZERODHA__ENABLED` gate broker‑scoped trading services; legacy `PAPER_TRADING__ENABLED` is no longer honored at runtime.
+- Validator: market‑closed returns `overall_health=idle`; order/portfolio checks skipped when trading disabled; no‑signal messages suppressed when no strategies target a broker.
+- Market feed performance: queue/backpressure tuning (`MARKET_FEED__QUEUE_MAXSIZE`, `MARKET_FEED__ENQUEUE_BLOCK_TIMEOUT_MS`) and subscription batching (`MARKET_FEED__SUBSCRIPTION_BATCH_SIZE`).
+- Prometheus histograms: `market_tick_enqueue_delay_seconds` and `market_tick_emit_latency_seconds` with optional bucket tuning via `MONITORING__PROMETHEUS_BUCKETS__*`.
+- Observability: new Grafana dashboard v2 with latency (p50/p95) panels at `docs/observability/grafana/alpha_panda_prometheus_dashboard_v2.json`.
+- Logging: access logs include route templates; optional INFO sampling via `LOGGING__INFO_SAMPLING_RATIO` for high‑volume API logs.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -123,6 +131,14 @@ make setup  # Complete first-time setup
 - Example scrape target: `http://localhost:8000/metrics`
 - Install deps via `pip install -r requirements.txt -c constraints.txt` (includes `prometheus-client`).
 - DLQ counter: `trading_dlq_messages_total{service,broker}` increments when messages are sent to per-topic `.dlq`.
+
+### 🧰 Trading Service Flags
+- `TRADING__PAPER__ENABLED` controls paper trading lifecycle (safe default: true).
+- `TRADING__ZERODHA__ENABLED` controls Zerodha trading lifecycle (safe default: false).
+- Legacy `PAPER_TRADING__ENABLED` is no longer honored at runtime; use `TRADING__PAPER__ENABLED`.
+
+### 🚩 Multi‑Broker Control (Transition)
+- `ACTIVE_BROKERS` remains for services that fan‑out/subscribe by broker (e.g., strategy runner, risk manager). We will remove it gradually after refactoring those services to rely on per‑service flags and explicit topic routing.
 
 ### 📊 Grafana Dashboard
 

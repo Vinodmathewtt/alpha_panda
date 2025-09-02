@@ -152,7 +152,22 @@ class PaperTradingService:
                 event_type=EventType.PNL_SNAPSHOT,
                 broker="paper",
             )
-            # Update Prom last-activity for orders and portfolio
+            # Record pipeline metrics (Redis) and Prom last-activity
+            if self.metrics_collector:
+                try:
+                    await self.metrics_collector.record_order_processed(
+                        filled.model_dump(mode="json"), broker_context="paper"
+                    )
+                except Exception:
+                    pass
+                try:
+                    await self.metrics_collector.record_portfolio_update(
+                        portfolio_id=f"paper:{signal.strategy_id}",
+                        update_data=pnl.model_dump(mode="json"),
+                        broker_context="paper",
+                    )
+                except Exception:
+                    pass
             if self.prom_metrics:
                 self.prom_metrics.set_last_activity("paper_trading", "orders", "paper")
                 self.prom_metrics.set_last_activity("paper_trading", "portfolio", "paper")
@@ -164,8 +179,6 @@ class PaperTradingService:
             if self.prom_metrics:
                 self.prom_metrics.record_event_processed("paper_trading", "paper", EventType.ORDER_FILLED.value)
                 self.prom_metrics.record_event_processed("paper_trading", "paper", EventType.PNL_SNAPSHOT.value)
-            if self.metrics_collector:
-                await self.metrics_collector.set_last_activity_timestamp("orders", "paper")
-                await self.metrics_collector.set_last_activity_timestamp("portfolio", "paper")
+            # Redis last activity recorded via record_* above
         except Exception:
             pass

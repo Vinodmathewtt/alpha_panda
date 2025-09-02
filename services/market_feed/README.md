@@ -268,7 +268,6 @@ class OHLCData(BaseModel):
 
 ```bash
 # Zerodha Authentication (MANDATORY)
-ZERODHA__ENABLED=true
 ZERODHA__API_KEY=your_api_key
 ZERODHA__API_SECRET=your_api_secret
 

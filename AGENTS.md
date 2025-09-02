@@ -19,6 +19,28 @@
   - Forward plan: any architecture that relies on a central `broker_namespace` to steer behavior is transitional and should be refactored to explicit per‑broker topic routing and context.
 - **Market Data**: Single Zerodha feed publishes `market.ticks` for all brokers.
 
+## Recent Improvements
+- Trading flags: unified on `TRADING__PAPER__ENABLED` and `TRADING__ZERODHA__ENABLED`; legacy `PAPER_TRADING__ENABLED` removed from runtime gating.
+- Validator: market‑closed becomes `idle`, order/portfolio checks are skipped for disabled brokers, and no‑signal messages are suppressed when no strategies target a broker.
+- Market feed performance: configurable queue (`MARKET_FEED__QUEUE_MAXSIZE`, `MARKET_FEED__ENQUEUE_BLOCK_TIMEOUT_MS`), subscription batching (`MARKET_FEED__SUBSCRIPTION_BATCH_SIZE`).
+- New Prometheus histograms: `market_tick_enqueue_delay_seconds` and `market_tick_emit_latency_seconds`; optional bucket tuning via `MONITORING__PROMETHEUS_BUCKETS__*`.
+- Logging: access logs include route templates; optional INFO sampling via `LOGGING__INFO_SAMPLING_RATIO` for API channel.
+- DLQ logs now include `dlq=true` for consistent tagging.
+
+### Service Enablement Flags (Updated)
+- **Trading service flags**:
+  - `TRADING__PAPER__ENABLED` (bool): controls only the paper trading service lifecycle.
+  - `TRADING__ZERODHA__ENABLED` (bool): controls only the Zerodha trading service lifecycle (order placement path).
+- **Zerodha auth & market feed**: Always required/started; do NOT gate these with a flag.
+  - The legacy `ZERODHA__ENABLED` variable is deprecated and should not control runtime behavior.
+- **ACTIVE_BROKERS (Transition)**: Remains in `.env` for now and is used by multi‑broker services (strategy runner, risk manager) to determine broker fan‑out/subscriptions. Plan to remove after refactoring those services to rely purely on per‑service enablement and explicit topic routing.
+
+#### Multi‑Broker Operation and Defaults
+- The system remains multi‑broker: when both trading flags are enabled, it trades with both brokers concurrently with strict topic isolation.
+- Default posture: if both trading flags are missing (unset), the effective behavior defaults to `TRADING__PAPER__ENABLED=true` and `TRADING__ZERODHA__ENABLED=false` for safety.
+- Explicit false wins: if a trading flag is explicitly set to `false`, do not override via defaults/legacy. If both are explicitly false, no trading services start (auth/feed still run) and a startup warning is logged.
+- Legacy `PAPER_TRADING__ENABLED` has been removed from runtime gating; use `TRADING__PAPER__ENABLED` exclusively.
+
 ### Recent Architecture/Operational Updates
 - **Event IDs**: Centralized ID generation via `core/utils/ids.py` (`generate_event_id()`). Legacy `generate_uuid7()` now delegates to this helper.
 - **DLQ Convention**: Standardize on per-topic `.dlq` suffix (e.g., `paper.orders.filled.dlq`). `TopicNames.DEAD_LETTER_QUEUE` is deprecated for new uses.
@@ -28,6 +50,12 @@
  - **Producer Envelope Rules**: `MessageProducer.send()` auto-wraps payloads into `EventEnvelope`. It only defaults `type=market_tick` when sending to `market.ticks` (shared); for all other topics an explicit `event_type` is required.
  - **DLQ Metrics Hook**: StreamServiceBuilder wires DLQ publisher callbacks to Prometheus via `PrometheusMetricsCollector.record_dlq_message(service, broker)`.
  - **Shared Prometheus Registry**: API exposes `/metrics` using a shared registry from the DI container so service collectors can register to a common scrape endpoint.
+ - **Service Gating (Planned Rollout)**: DI will always start auth/market feed; trading services start based on `TRADING__{BROKER}__ENABLED` in conjunction with `ACTIVE_BROKERS` during transition. Validator will skip order‑stage warnings for disabled trading services and respect market‑hours “idle” state.
+
+### Transition Plan (Towards per‑service flags)
+- Phase 1: Add `TRADING__PAPER__ENABLED` and `TRADING__ZERODHA__ENABLED`. Keep `ACTIVE_BROKERS` and gate trading services by (flag && broker in ACTIVE_BROKERS). Auth/market feed always on. Log effective config and sources at startup.
+- Phase 2: Gradually refactor services that rely on `ACTIVE_BROKERS` for fan‑out/subscriptions to use local enablement + explicit topic routing.
+- Phase 3: Gradually remove `ACTIVE_BROKERS` from runtime and `.env` after refactoring multi-broker services (strategy runner, risk manager) to rely on per‑service flags and explicit routing. Legacy `PAPER_TRADING__ENABLED` has already been removed from runtime gating.
 
 ### Trading Services Migration (Completed)
 - **Broker‑Scoped Trading**: Legacy `trading_engine` and `portfolio_manager` have been replaced by `services/paper_trading` and `services/zerodha_trading`.
@@ -124,9 +152,17 @@
   - Optional integration test validates subjects existence when `SCHEMA_REGISTRY_URL` is provided.
 
 ## Future Considerations (Deferred)
+- Authentication shortcut: Support a guaranteed `ZERODHA__ACCESS_TOKEN` shortcut to bypass interactive auth when a valid token is present (useful for CI and non-interactive restarts), while keeping auth/feed always-on. (Planned)
+- Remove `PaperTradingSettings.enabled` field from Settings once all legacy references are eliminated, to avoid confusion and ensure a single source of truth (`TRADING__PAPER__ENABLED`).
+- Scan and clean up any stale references to `PAPER_TRADING__ENABLED` in quickstarts, examples, and scripts; queue doc updates for when we refresh broader documentation.
 - Runtime Avro enablement behind a feature flag with controlled rollout; keep JSON at runtime until contracts stabilize.
 - Production secrets sourcing enforcement (fail-fast if defaults/empties detected in prod and forbid sourcing from tracked files).
 - Kafka consumer lag exporter and alerting are environment concerns; dashboards provided, infra enablement left to deployment.
+ - Documentation hygiene (gradual): broader doc sweep in non-archival docs to remove any lingering legacy mentions (e.g., `BROKER_NAMESPACE`, `ZERODHA__ENABLED`). Note: `AGENTS.md` already marks `ZERODHA__ENABLED` deprecated.
+
+## Documentation Maintenance Policy
+- Active docs live under `docs/` and module-level READMEs.
+- Documents under `docs/archive/` are officially deprecated and are not part of the application’s documentation system; do not maintain or update them when changing behavior.
 
 ## Coding Style & Naming Conventions
 - Python: 4‑space indent, UTF‑8, LF (`.editorconfig`).
@@ -160,6 +196,8 @@
 
 ## Security & Configuration Tips
 - `.env` and `.env.example` are intentionally tracked for dev templates; keep secrets out of Git for prod.
-- Brokers: set `ACTIVE_BROKERS=paper,zerodha` for unified deployments.
+- Brokers: keep `ACTIVE_BROKERS=paper,zerodha` during the transition to per‑service flags. Final state removes `ACTIVE_BROKERS` after refactors.
+- Trading services: control execution via `TRADING__PAPER__ENABLED` and `TRADING__ZERODHA__ENABLED`. Use `TRADING__ZERODHA__ENABLED=false` to prevent live order placement while still consuming Zerodha market data.
+- Zerodha auth/market feed: always required; do not disable via env. The legacy `ZERODHA__ENABLED` is deprecated.
 - Zerodha auth is mandatory for full pipeline; E2E needs `ZERODHA_API_KEY`, `ZERODHA_API_SECRET`, `ZERODHA_ACCESS_TOKEN`.
 - Production: avoid CORS wildcard in `API__CORS_ORIGINS` (enforced in `api/main.py`).

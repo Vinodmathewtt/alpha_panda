@@ -1,5 +1,5 @@
 {
-  "title": "Alpha Panda - Service Metrics",
+  "title": "Alpha Panda - Service Metrics v2",
   "timezone": "browser",
   "panels": [
     {
@@ -9,24 +9,6 @@
         {"expr": "sum(rate(trading_events_processed_total[1m])) by (service, broker, event_type)", "legendFormat": "{{service}} {{broker}} {{event_type}}"}
       ],
       "gridPos": {"x": 0, "y": 0, "w": 24, "h": 8}
-    },
-    {
-      "type": "graph",
-      "title": "Market Tick Enqueue Delay (p50/p95)",
-      "targets": [
-        {"expr": "histogram_quantile(0.5, sum(rate(market_tick_enqueue_delay_seconds_bucket[1m])) by (le, source))", "legendFormat": "p50 {{source}}"},
-        {"expr": "histogram_quantile(0.95, sum(rate(market_tick_enqueue_delay_seconds_bucket[1m])) by (le, source))", "legendFormat": "p95 {{source}}"}
-      ],
-      "gridPos": {"x": 0, "y": 48, "w": 12, "h": 8}
-    },
-    {
-      "type": "graph",
-      "title": "Market Tick Emit Latency (p50/p95)",
-      "targets": [
-        {"expr": "histogram_quantile(0.5, sum(rate(market_tick_emit_latency_seconds_bucket[1m])) by (le, service))", "legendFormat": "p50 {{service}}"},
-        {"expr": "histogram_quantile(0.95, sum(rate(market_tick_emit_latency_seconds_bucket[1m])) by (le, service))", "legendFormat": "p95 {{service}}"}
-      ],
-      "gridPos": {"x": 12, "y": 48, "w": 12, "h": 8}
     },
     {
       "type": "graph",
@@ -86,6 +68,24 @@
     },
     {
       "type": "graph",
+      "title": "Market Tick Enqueue Delay (p50/p95)",
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum(rate(market_tick_enqueue_delay_seconds_bucket[1m])) by (le, source))", "legendFormat": "p50 {{source}}"},
+        {"expr": "histogram_quantile(0.95, sum(rate(market_tick_enqueue_delay_seconds_bucket[1m])) by (le, source))", "legendFormat": "p95 {{source}}"}
+      ],
+      "gridPos": {"x": 0, "y": 48, "w": 12, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "Market Tick Emit Latency (p50/p95)",
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum(rate(market_tick_emit_latency_seconds_bucket[1m])) by (le, service))", "legendFormat": "p50 {{service}}"},
+        {"expr": "histogram_quantile(0.95, sum(rate(market_tick_emit_latency_seconds_bucket[1m])) by (le, service))", "legendFormat": "p95 {{service}}"}
+      ],
+      "gridPos": {"x": 12, "y": 48, "w": 12, "h": 8}
+    },
+    {
+      "type": "graph",
       "title": "Consumer Lag (paper/zerodha)",
       "targets": [
         {"expr": "max(kafka_consumergroup_lag{group=~\".*(paper_trading|zerodha_trading).*\"}) by (group,topic)", "legendFormat": "{{group}} {{topic}}"}
@@ -96,3 +96,4 @@
   "schemaVersion": 36,
   "version": 1
 }
+

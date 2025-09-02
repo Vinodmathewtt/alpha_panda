@@ -397,3 +397,16 @@ class PipelineMetricsCollector:
             self.logger.error("Failed to reset metrics",
                             error=str(e),
                             broker=self.broker_namespace)
+
+    async def set_strategy_count(self, broker: str, count: int) -> None:
+        """Record the number of active strategies targeting a broker.
+
+        Stored as pipeline:strategies:{broker}:count with a TTL for easy lookup by validators.
+        """
+        try:
+            from .metrics_registry import MetricsRegistry
+            key = MetricsRegistry.strategies_count(broker)
+            await self.redis.setex(key, self.metrics_ttl, str(int(count)))
+            self.logger.debug("Set strategy count", broker=broker, count=count)
+        except Exception as e:
+            self.logger.error("Failed to set strategy count", broker=broker, error=str(e))

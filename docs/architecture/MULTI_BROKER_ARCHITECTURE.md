@@ -114,8 +114,9 @@ All handlers receive `(message, topic)` parameters and extract broker context fr
 **Core Configuration**:
 ```bash
 ACTIVE_BROKERS=paper,zerodha    # Comma-separated list of active brokers
-PAPER_TRADING__ENABLED=true
-ZERODHA__ENABLED=true
+TRADING__PAPER__ENABLED=true
+TRADING__ZERODHA__ENABLED=false # Enable to activate live order placement
+# Zerodha auth/feed are always-on; ensure API key/secret are configured
 ```
 
 ### Deployment Patterns

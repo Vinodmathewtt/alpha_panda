@@ -92,6 +92,12 @@ class MetricsRegistry:
     def portfolio_updates_count(cls, broker: str) -> str:
         """Key for portfolio update count"""
         return cls._build_key("portfolio_updates", broker, "count")
+
+    # Strategy configuration (broker-specific)
+    @classmethod
+    def strategies_count(cls, broker: str) -> str:
+        """Key for active strategies count targeting this broker"""
+        return cls._build_key("strategies", broker, "count")
     
     # Health Check Keys
     @classmethod

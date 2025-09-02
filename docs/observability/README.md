@@ -46,6 +46,7 @@ docker compose --profile observability restart prometheus
 
 ## Dashboards
 - Service metrics: `docs/observability/grafana/alpha_panda_prometheus_dashboard.json`
+- Service metrics v2 (latency p50/p95 panels): `docs/observability/grafana/alpha_panda_prometheus_dashboard_v2.json`
 - Consumer lag: `docs/observability/grafana/consumer_lag_dashboard.json`
 
 Grafana is configured to auto‑load dashboard JSONs from the dashboards folder. Changes are picked up automatically within ~10 seconds.
@@ -65,6 +66,8 @@ Configured in `config/prometheus/prometheus.yml`:
   - `trading_orders_executed_total{broker,order_type,status}`
   - `strategy_pnl_current{strategy_id,broker}`
   - `market_ticks_received_total{source}`
+  - `market_tick_enqueue_delay_seconds{source}`
+  - `market_tick_emit_latency_seconds{service}`
 - System:
   - `trading_events_processed_total{service,broker,event_type}`
   - `trading_processing_latency_seconds{service,event_type}`

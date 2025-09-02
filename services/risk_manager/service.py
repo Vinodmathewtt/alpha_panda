@@ -10,6 +10,7 @@ from core.logging.service_logger import get_service_logger
 from core.monitoring import PipelineMetricsCollector
 from core.monitoring.prometheus_metrics import PrometheusMetricsCollector
 from core.observability.tracing import get_tracer
+import asyncio
 from .rules import RiskRuleEngine
 from .state import RiskStateManager
 
@@ -82,6 +83,11 @@ class RiskManagerService:
                     self.prom_metrics.set_pipeline_health("risk_manager", broker, True)
             except Exception:
                 pass
+        # Start lightweight heartbeat task for observability
+        try:
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        except Exception:
+            self._heartbeat_task = None
     
     async def stop(self):
         """Stop the risk manager service"""
@@ -94,6 +100,16 @@ class RiskManagerService:
                     self.prom_metrics.set_pipeline_health("risk_manager", broker, False)
             except Exception:
                 pass
+        # Stop heartbeat
+        try:
+            if hasattr(self, "_heartbeat_task") and self._heartbeat_task:
+                self._heartbeat_task.cancel()
+                try:
+                    await self._heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+        except Exception:
+            pass
     
     def _is_event_type(self, message: Dict[str, Any], et: EventType) -> bool:
         t = message.get('type')
@@ -361,3 +377,18 @@ class RiskManagerService:
                 "service_status": "running" if hasattr(self.orchestrator, '_running') else "unknown"
             }
         }
+
+    async def _heartbeat_loop(self):
+        """Emit a periodic Prometheus heartbeat timestamp per broker for validator clarity."""
+        interval = 30.0
+        try:
+            while True:
+                if self.prom_metrics:
+                    for broker in self.settings.active_brokers:
+                        try:
+                            self.prom_metrics.set_last_activity("risk_manager", "heartbeat", broker)
+                        except Exception:
+                            pass
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            return

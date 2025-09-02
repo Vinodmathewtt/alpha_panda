@@ -73,8 +73,7 @@ services:
       - DATABASE__POSTGRES_URL=postgresql+asyncpg://alpha_panda_test:test_password@postgres-test:5432/alpha_panda_test
       - REDPANDA__BOOTSTRAP_SERVERS=redpanda-test:9092
       - REDIS__URL=redis://redis-test:6379/0
-      - ZERODHA__ENABLED=false  # Disable for testing
-      - PAPER_TRADING__ENABLED=true
+      - TRADING__PAPER__ENABLED=true
     volumes:
       - ./tests/e2e:/app/tests/e2e
       - ./logs:/app/logs

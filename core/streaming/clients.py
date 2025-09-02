@@ -25,7 +25,7 @@ from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
 from aiokafka.admin import AIOKafkaAdminClient
 from aiokafka.errors import KafkaError, KafkaConnectionError
 from aiokafka.structs import TopicPartition
-from core.schemas.events import EventEnvelope, EventType, generate_uuid7
+from core.schemas.events import EventEnvelope, EventType
 from core.config.settings import RedpandaSettings
 from core.streaming.deduplication import EventDeduplicator
 from core.streaming.error_handling import ErrorHandler, DLQPublisher, ErrorClassifier
@@ -595,8 +595,8 @@ class StreamProcessor(GracefulShutdownMixin):
         
         if not broker:
             if topic == TopicNames.MARKET_TICKS:
-                # For shared topics, use "market" namespace for market data
-                broker = 'market'
+                # Shared market data topic uses the 'shared' broker label for envelopes
+                broker = 'shared'
             else:
                 # For broker-specific topics, extract from topic name
                 broker = topic.split('.')[0] if '.' in topic else "unknown"

@@ -49,6 +49,9 @@ Defaults are configured in `pytest.ini` to only collect tests under `tests/` and
 - Phase 2 (optional)
   - Pipeline metrics Redis integration using a local fake client
   - DLQ emission path unit tests with in-memory producer fakes
+  - Validator latency threshold paths (market_data/signal/risk/order/portfolio)
+  - Market feed enqueue blocking path (queue full with block-with-timeout instrumentation)
+  - StreamServiceBuilder DLQ metrics callback (simulate publish and assert Prometheus counter increments)
 - Phase 3 (optional/infra)
   - Kafka/Redis integration: topic fan-out and per-broker processing
   - E2E smoke: strategy → risk → trading → portfolio with metrics assertions

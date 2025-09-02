@@ -355,9 +355,9 @@ Before marking any feature complete, verify:
 - **TradingEngineService**: Routes validated signals to appropriate trader based on configuration
 
 #### Configuration-Based Routing
-- **Global Settings**: `settings.paper_trading.enabled`, `settings.zerodha.enabled`
-- **Per-Strategy Configuration**: Database-driven `zerodha_trading_enabled` flag per strategy
-- **Default Behavior**: ALL signals go to paper trading, opt-in for zerodha trading per strategy
+- **Trading Enablement Flags**: `TRADING__PAPER__ENABLED`, `TRADING__ZERODHA__ENABLED` (auth/feed always-on)
+- **Per-Strategy Configuration**: Database-driven flags per strategy as applicable
+- **Default Behavior**: If unset, `paper=true`, `zerodha=false` (safe default)
 
 #### Data Isolation Patterns
 See implementation example: `examples/trading/trading_engine_routing.py`

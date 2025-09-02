@@ -1,6 +1,7 @@
 # Complete settings with ALL required sections
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices
 from enum import Enum
 from typing import Literal, List, Any, Union
 from pathlib import Path
@@ -44,6 +45,9 @@ class AuthSettings(BaseModel):
 
 
 class PaperTradingSettings(BaseModel):
+    # DEPRECATED: Do not use for runtime gating. Trading lifecycle is controlled by
+    # TRADING__PAPER__ENABLED in Settings (transition flag). This field remains only
+    # to avoid breaking existing configs and will be removed after deprecation.
     enabled: bool = True
     slippage_percent: float = 0.05  # 0.05% slippage
     commission_percent: float = 0.1  # 0.1% commission
@@ -51,7 +55,9 @@ class PaperTradingSettings(BaseModel):
 
 
 class ZerodhaSettings(BaseModel):
-    enabled: bool = True   # Enabled by default for development
+    # Controls only the Zerodha trading service (order placement path)
+    # Default to False for safety; Zerodha auth/market feed remain always-on
+    enabled: bool = False
     api_key: str = ""
     api_secret: str = ""
     starting_cash: float = 1_000_000.0  # Starting cash for Zerodha portfolios
@@ -96,6 +102,8 @@ class LoggingSettings(BaseModel):
         "authorization", "access_token", "refresh_token", "api_key", "api-secret",
         "api_secret", "password", "secret", "token", "set-cookie"
     ]
+    # Noise controls (sampling)
+    info_sampling_ratio: float = 1.0  # 0.0–1.0; drop fraction of INFO logs when < 1.0
 
 
 class ReconnectionSettings(BaseModel):
@@ -143,6 +151,20 @@ class MonitoringSettings(BaseModel):
     market_data_latency_threshold: float = 1.0
     startup_grace_period_seconds: float = 30.0
 
+    # Prometheus bucket tuning (optional overrides)
+    class PrometheusBuckets(BaseModel):
+        processing_latency_seconds: list[float] = [
+            0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+        ]
+        market_enqueue_delay_seconds: list[float] = [
+            0.0001, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5
+        ]
+        market_emit_latency_seconds: list[float] = [
+            0.0001, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0
+        ]
+
+    prometheus_buckets: PrometheusBuckets = PrometheusBuckets()
+
 
 class TracingSettings(BaseModel):
     """OpenTelemetry tracing configuration"""
@@ -151,6 +173,16 @@ class TracingSettings(BaseModel):
     otlp_endpoint: str = "http://localhost:4317"  # OTLP gRPC default
     service_name: str | None = None
     sampling_ratio: float = 1.0
+
+
+class MarketFeedSettings(BaseModel):
+    """Runtime settings for market feed performance and behavior"""
+    queue_maxsize: int = 10000
+    # When set (>0), the ticker callback will block up to this timeout to enqueue;
+    # otherwise, it drops immediately when full.
+    enqueue_block_timeout_ms: int | None = None
+    # Optional batching of subscriptions to reduce connection stress (0 = no batching)
+    subscription_batch_size: int = 0
 
 
 class APISettings(BaseModel):
@@ -237,6 +269,7 @@ class Settings(BaseSettings):
     monitoring: MonitoringSettings = MonitoringSettings()
     reconnection: ReconnectionSettings = ReconnectionSettings()
     tracing: TracingSettings = TracingSettings()
+    market_feed: MarketFeedSettings = MarketFeedSettings()
 
     # Kafka producer tuning (config-driven, per service)
     class ProducerTuning(BaseModel):
@@ -252,11 +285,50 @@ class Settings(BaseSettings):
     health_checks: HealthCheckSettings = HealthCheckSettings()
     api: APISettings = APISettings()
 
+    # --- Transition flags for trading service enablement ---
+    # Prefer TRADING__{BROKER}__ENABLED; provide shim for legacy envs.
+    trading_paper_enabled: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TRADING__PAPER__ENABLED"),
+        description="Explicit enable flag for paper trading service (transition flag)",
+    )
+    trading_zerodha_enabled: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TRADING__ZERODHA__ENABLED"),
+        description="Explicit enable flag for Zerodha trading service (transition flag)",
+    )
+
 
     @property
     def logs_dir(self) -> str:
         """Get absolute path to logs directory"""
         return self.logging.logs_dir
+
+    # Effective enablement helpers (transition logic encapsulated here)
+    def is_paper_trading_enabled(self) -> bool:
+        """Resolve effective enablement for paper trading service.
+
+        Precedence:
+        - If TRADING__PAPER__ENABLED is set, use it.
+        - Else, default True (dev-safe default).
+        """
+        if self.trading_paper_enabled is not None:
+            return bool(self.trading_paper_enabled)
+        return True
+
+    def is_zerodha_trading_enabled(self) -> bool:
+        """Resolve effective enablement for Zerodha trading service.
+
+        Precedence:
+        - If TRADING__ZERODHA__ENABLED is set, use it.
+        - Else, fall back to nested zerodha.enabled (legacy misuse for trading path).
+        - Else, default False (safety first).
+        """
+        if self.trading_zerodha_enabled is not None:
+            return bool(self.trading_zerodha_enabled)
+        if hasattr(self, "zerodha") and self.zerodha is not None:
+            return bool(getattr(self.zerodha, "enabled", False))
+        return False
 
     @property  
     def base_dir(self) -> str:

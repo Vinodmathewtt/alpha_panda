@@ -43,8 +43,8 @@ db_url = settings.database.postgres_url
 # Access Redpanda configuration
 bootstrap_servers = settings.redpanda.bootstrap_servers
 
-# Access trading configuration
-paper_enabled = settings.paper_trading.enabled
+# Access trading enablement (service flag)
+paper_enabled = settings.is_paper_trading_enabled()
 ```
 
 ### Environment Variables
@@ -57,9 +57,9 @@ DATABASE__POSTGRES_URL=postgresql+asyncpg://user:pass@host:5432/db
 # Redpanda configuration
 REDPANDA__BOOTSTRAP_SERVERS=localhost:9092
 
-# Trading configuration
-PAPER_TRADING__ENABLED=true
-ZERODHA__ENABLED=false
+# Trading services
+TRADING__PAPER__ENABLED=true
+TRADING__ZERODHA__ENABLED=false
 ```
 
 ### Configuration Sections

@@ -106,10 +106,39 @@ class ApplicationOrchestrator:
 
         self.logger.info("✅ All health checks passed. Proceeding with remaining service startup...")
 
+        # --- Resolve effective trading enablement (transition model) ---
+        # Defaults: paper=True, zerodha=False; explicit False wins; legacy shim honored for paper
+        paper_enabled = self.settings.is_paper_trading_enabled()
+        zerodha_enabled = self.settings.is_zerodha_trading_enabled()
+
+        # Log effective configuration and sources
+        self.logger.info(
+            "Effective trading enablement resolved",
+            paper_enabled=paper_enabled,
+            zerodha_enabled=zerodha_enabled,
+            active_brokers=self.settings.active_brokers,
+        )
+        if (paper_enabled is False) and (zerodha_enabled is False):
+            self.logger.warning(
+                "All trading services disabled (paper=false, zerodha=false). Auth/feed will run; no orders will be placed."
+            )
+
         # --- START REMAINING SERVICES (auth service already started) ---
         all_services = self.container.lifespan_services()
+
+        # Apply gating: only start trading services when enabled AND broker active
+        def _allow(service_obj) -> bool:
+            name = type(service_obj).__name__
+            if name == "PaperTradingService":
+                return paper_enabled and ("paper" in self.settings.active_brokers)
+            if name == "ZerodhaTradingService":
+                return zerodha_enabled and ("zerodha" in self.settings.active_brokers)
+            return True
+
+        gated_services = [s for s in all_services if s and _allow(s)]
+
         # Filter out auth_service since it's already started
-        remaining_services = [s for s in all_services if s is not auth_service]
+        remaining_services = [s for s in gated_services if s is not auth_service]
         await asyncio.gather(*(service.start() for service in remaining_services if service))
         self.logger.info("✅ All services started successfully.")
     

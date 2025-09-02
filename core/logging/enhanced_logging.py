@@ -125,12 +125,32 @@ class AccessLogEnricherFilter(logging.Filter):
                 rid = ctx.get("request_id") if isinstance(ctx, dict) else None
                 if rid:
                     setattr(record, "request_id", rid)
+                # If route template was captured by API middleware, attach it
+                route_tpl = ctx.get("route_template") if isinstance(ctx, dict) else None
+                if route_tpl:
+                    setattr(record, "http_route_template", route_tpl)
             except Exception:
                 pass
         except Exception:
             # Do not block logging on parsing failures
             return True
         return True
+
+
+def _parse_size_str(size_str: str) -> int:
+    """Parse size string like '100MB' to integer bytes (module-level helper)."""
+    try:
+        s = str(size_str).upper()
+        if s.endswith("B"):
+            s = s[:-1]
+        multipliers = {"K": 1024, "M": 1024 * 1024, "G": 1024 * 1024 * 1024}
+        for suffix, mul in multipliers.items():
+            if s.endswith(suffix):
+                return int(float(s[:-1]) * mul)
+        return int(s)
+    except Exception:
+        # Fallback to a conservative default (100MB)
+        return 100 * 1024 * 1024
 
 
 class EnhancedLoggerManager:
@@ -253,7 +273,7 @@ class EnhancedLoggerManager:
                 Path(handler.baseFilename) == log_file):
                 return  # File handler already configured
         
-        max_bytes = self._parse_size(self.settings.logging.file_max_size)
+        max_bytes = _parse_size_str(self.settings.logging.file_max_size)
         
         file_handler = logging.handlers.RotatingFileHandler(
             filename=log_file,
@@ -347,7 +367,7 @@ class EnhancedLoggerManager:
     def _create_channel_handler(self, channel: LogChannel, config) -> logging.Handler:
         """Create a file handler for a specific channel."""
         log_file = config.get_file_path(self.settings.logs_dir)
-        max_bytes = self._parse_size(config.max_bytes)
+        max_bytes = _parse_size_str(config.max_bytes)
         
         handler = logging.handlers.RotatingFileHandler(
             filename=log_file,
@@ -385,6 +405,13 @@ class EnhancedLoggerManager:
             # Enrich uvicorn access logs with structured HTTP fields for API channel
             if channel == LogChannel.API:
                 handler.addFilter(AccessLogEnricherFilter())
+                # Optional sampling for high-frequency INFO logs
+                try:
+                    ratio = float(getattr(self.settings.logging, 'info_sampling_ratio', 1.0) or 1.0)
+                except Exception:
+                    ratio = 1.0
+                if ratio < 1.0:
+                    handler.addFilter(_InfoSamplingFilter(ratio))
         
         return handler
 
@@ -464,6 +491,22 @@ class EnhancedLoggerManager:
         # Start metrics updater thread if metrics available
         if self._metrics_enabled and self._metric_queue_size is not None:
             self._start_logging_metrics_thread()
+
+
+class _InfoSamplingFilter(logging.Filter):
+    """Randomly drop a fraction of INFO-level logs to reduce noise."""
+
+    def __init__(self, probability: float):
+        super().__init__()
+        import random
+        self._random = random
+        self.probability = max(0.0, min(1.0, probability))
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno != logging.INFO:
+            return True
+        # Keep with given probability
+        return self._random.random() < self.probability
 
     def _start_logging_metrics_thread(self) -> None:
         def _metrics_worker():

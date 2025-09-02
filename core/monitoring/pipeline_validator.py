@@ -38,6 +38,9 @@ class PipelineValidator:
         
         # Configurable grace period for startup - avoid false alarms
         self.startup_grace_period_seconds = getattr(settings.monitoring, 'startup_grace_period_seconds', 30.0) if hasattr(settings, 'monitoring') else 30.0
+
+        # Cache effective trading enablement for the given broker
+        self._trading_enabled = self._is_trading_enabled(self.broker)
         
     async def validate_end_to_end_flow(self) -> Dict[str, Any]:
         """Validate complete pipeline flow from market data to orders for this broker"""
@@ -66,6 +69,41 @@ class PipelineValidator:
             return results
         
         try:
+            # Quick Redis connectivity check to surface explicit infra issues
+            try:
+                if hasattr(self.redis, 'ping'):
+                    await self.redis.ping()
+            except Exception as re:
+                results["overall_health"] = "error"
+                results["bottlenecks"] = [{
+                    "stage": "infrastructure",
+                    "issue": "redis_unavailable",
+                    "broker": self.broker,
+                    "details": str(re)
+                }]
+                results["message"] = "Redis connectivity issue detected"
+                self.logger.error("Redis connectivity issue during validation", validation_id=validation_id, broker=self.broker, error=str(re))
+                return results
+            # Market-aware: if market is closed, return idle state to reduce noise
+            if not self.market_hours_checker.is_market_open():
+                results["overall_health"] = "idle"
+                results["message"] = "Market closed; validator in idle mode"
+                # We still try to fetch minimal stage info without raising alerts
+                stages = {}
+                stages["market_data"] = await self._validate_market_data_flow()
+                stages["signal_generation"] = {"healthy": True, "broker": self.broker, "skipped": True, "reason": "market_closed"}
+                stages["risk_validation"] = {"healthy": True, "broker": self.broker, "skipped": True, "reason": "market_closed"}
+                # If trading disabled, also mark order/portfolio as skipped; else mark idle
+                if not self._trading_enabled:
+                    stages["order_execution"] = {"healthy": True, "broker": self.broker, "skipped": True, "reason": "trading_disabled"}
+                    stages["portfolio_updates"] = {"healthy": True, "broker": self.broker, "skipped": True, "reason": "trading_disabled"}
+                else:
+                    stages["order_execution"] = {"healthy": True, "broker": self.broker, "skipped": True, "reason": "market_closed"}
+                    stages["portfolio_updates"] = {"healthy": True, "broker": self.broker, "skipped": True, "reason": "market_closed"}
+                results["stages"] = stages
+                self.logger.info("Pipeline validation idle (market closed)", validation_id=validation_id, broker=self.broker)
+                return results
+
             # Stage 1: Market Data Flow
             market_data_health = await self._validate_market_data_flow()
             results["stages"]["market_data"] = market_data_health
@@ -108,7 +146,7 @@ class PipelineValidator:
             results["error"] = str(e)
             
         return results
-    
+
     def _in_startup_grace_period(self) -> bool:
         """Check if service is in startup grace period"""
         uptime_seconds = (datetime.utcnow() - self.start_time).total_seconds()
@@ -164,10 +202,31 @@ class PipelineValidator:
                 "error": str(e),
                 "recommendation": "Check Redis connectivity and market data service"
             }
-    
+        
     async def _validate_signal_generation(self) -> Dict[str, Any]:
         """Validate signal generation for this specific broker"""
         try:
+            # Early short-circuit: when market is open, trading enabled, and no strategies target this broker
+            if self.market_hours_checker.is_market_open() and self._trading_enabled:
+                try:
+                    from .metrics_registry import MetricsRegistry
+                    _raw = await self.redis.get(MetricsRegistry.strategies_count(self.broker))
+                    if _raw is None:
+                        active = 0
+                    else:
+                        s = _raw.decode() if isinstance(_raw, (bytes, bytearray)) else str(_raw)
+                        active = int(s)
+                except Exception:
+                    active = None
+                if active == 0:
+                    return {
+                        "healthy": True,
+                        "broker": self.broker,
+                        "last_signal_time": None,
+                        "signals_last_5min": 0,
+                        "info": f"No active strategies configured for {self.broker}",
+                    }
+
             # Check broker-specific signal generation metrics - FIXED: Use pipeline: prefix to match PipelineMetricsCollector
             signals_key = MetricsRegistry.signals_last(self.broker)
             signal_count_key = MetricsRegistry.signals_count(self.broker)
@@ -182,12 +241,32 @@ class PipelineValidator:
                 "signals_last_5min": int(signal_count_str) if signal_count_str else 0
             }
             
-            # During market hours, expect some signal activity
-            if self.market_hours_checker.is_market_open():
+            # During market hours, expect some signal activity if trading path is enabled
+            if self.market_hours_checker.is_market_open() and self._trading_enabled:
                 if not last_signal_time_str:
-                    result["healthy"] = False
-                    result["issue"] = f"No signals generated for {self.broker} during market hours"
-                    result["recommendation"] = f"Check strategy runner and {self.broker} broker configuration"
+                    # If no active strategies target this broker, do not warn
+                    try:
+                        from .metrics_registry import MetricsRegistry
+                        strat_count_key = MetricsRegistry.strategies_count(self.broker)
+                        strat_count_raw = await self.redis.get(strat_count_key)
+                        if strat_count_raw is None:
+                            active_strategies = 0
+                        else:
+                            if isinstance(strat_count_raw, (bytes, bytearray)):
+                                strat_count_str = strat_count_raw.decode()
+                            else:
+                                strat_count_str = str(strat_count_raw)
+                            active_strategies = int(strat_count_str)
+                    except Exception:
+                        active_strategies = None
+
+                    if active_strategies == 0:
+                        result["healthy"] = True
+                        result["info"] = f"No active strategies configured for {self.broker}"
+                    else:
+                        result["healthy"] = False
+                        result["issue"] = f"No signals generated for {self.broker} during market hours"
+                        result["recommendation"] = f"Check strategy runner and {self.broker} broker configuration"
                 else:
                     # Check signal latency - FIXED: Handle JSON format from PipelineMetricsCollector
                     import json
@@ -208,6 +287,7 @@ class PipelineValidator:
             return {
                 "healthy": False,
                 "broker": self.broker,
+                "issue": "redis_connectivity_error",
                 "error": str(e),
                 "recommendation": f"Check Redis connectivity and strategy runner service for {self.broker}"
             }
@@ -246,6 +326,7 @@ class PipelineValidator:
             return {
                 "healthy": False,
                 "broker": self.broker,
+                "issue": "redis_connectivity_error",
                 "error": str(e),
                 "recommendation": f"Check Redis connectivity and risk manager service for {self.broker}"
             }
@@ -253,6 +334,9 @@ class PipelineValidator:
     async def _validate_order_execution(self) -> Dict[str, Any]:
         """Validate order execution for this specific broker"""
         try:
+            # Respect disabled trading service: skip order execution checks when disabled
+            if not self._trading_enabled:
+                return {"healthy": True, "broker": self.broker, "skipped": True, "reason": "trading_disabled"}
             # Check broker-specific order execution metrics - FIXED: Use pipeline: prefix to match PipelineMetricsCollector
             execution_key = MetricsRegistry.orders_last(self.broker)
             execution_count_key = MetricsRegistry.orders_count(self.broker)
@@ -284,6 +368,7 @@ class PipelineValidator:
             return {
                 "healthy": False,
                 "broker": self.broker,
+                "issue": "redis_connectivity_error",
                 "error": str(e),
                 "recommendation": f"Check Redis connectivity and trading engine service for {self.broker}"
             }
@@ -291,6 +376,9 @@ class PipelineValidator:
     async def _validate_portfolio_updates(self) -> Dict[str, Any]:
         """Validate portfolio updates for this specific broker"""
         try:
+            # Respect disabled trading service: skip portfolio checks when disabled
+            if not self._trading_enabled:
+                return {"healthy": True, "broker": self.broker, "skipped": True, "reason": "trading_disabled"}
             # Check broker-specific portfolio update metrics - FIXED: Use pipeline: prefix to match PipelineMetricsCollector
             portfolio_key = MetricsRegistry.portfolio_updates_last(self.broker)
             portfolio_count_key = MetricsRegistry.portfolio_updates_count(self.broker)
@@ -322,6 +410,7 @@ class PipelineValidator:
             return {
                 "healthy": False,
                 "broker": self.broker,
+                "issue": "redis_connectivity_error",
                 "error": str(e),
                 "recommendation": f"Check Redis connectivity and portfolio manager service for {self.broker}"
             }
@@ -362,3 +451,14 @@ class PipelineValidator:
             overall_health = "critical"
         
         return overall_health, bottlenecks, recommendations
+
+    def _is_trading_enabled(self, broker: str) -> bool:
+        """Determine if trading is enabled for the given broker using Settings helpers."""
+        try:
+            if broker == "paper":
+                return bool(self.settings.is_paper_trading_enabled())
+            if broker == "zerodha":
+                return bool(self.settings.is_zerodha_trading_enabled())
+        except Exception:
+            pass
+        return False
