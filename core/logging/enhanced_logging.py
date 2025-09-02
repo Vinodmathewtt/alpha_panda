@@ -491,23 +491,13 @@ class EnhancedLoggerManager:
         # Start metrics updater thread if metrics available
         if self._metrics_enabled and self._metric_queue_size is not None:
             self._start_logging_metrics_thread()
-
-
-class _InfoSamplingFilter(logging.Filter):
-    """Randomly drop a fraction of INFO-level logs to reduce noise."""
-
-    def __init__(self, probability: float):
-        super().__init__()
-        import random
-        self._random = random
-        self.probability = max(0.0, min(1.0, probability))
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.levelno != logging.INFO:
-            return True
-        # Keep with given probability
-        return self._random.random() < self.probability
-
+            
+    # =================================================================================
+    # START: CORRECTED INDENTATION
+    # The following methods were incorrectly indented and have been moved inside the
+    # EnhancedLoggerManager class.
+    # =================================================================================
+    
     def _start_logging_metrics_thread(self) -> None:
         def _metrics_worker():
             while True:
@@ -809,6 +799,26 @@ class _InfoSamplingFilter(logging.Filter):
         stats["channel_handlers"] = channel_status
 
         return stats
+
+# =================================================================================
+# END: CORRECTED INDENTATION
+# =================================================================================
+
+
+class _InfoSamplingFilter(logging.Filter):
+    """Randomly drop a fraction of INFO-level logs to reduce noise."""
+
+    def __init__(self, probability: float):
+        super().__init__()
+        import random
+        self._random = random
+        self.probability = max(0.0, min(1.0, probability))
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno != logging.INFO:
+            return True
+        # Keep with given probability
+        return self._random.random() < self.probability
 
 
 def configure_enhanced_logging(settings: Settings) -> None:
