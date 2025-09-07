@@ -1,0 +1,19 @@
+strategy_name: 'NIFTY Rules Mean Reversion'
+strategy_class: 'mean_reversion'  # Rule-based mean reversion
+enabled: true
+parameters:
+  lookback_periods: 20
+  rsi_period: 14
+  rsi_oversold: 30
+  rsi_overbought: 70
+  bollinger_std: 2.0
+  position_size: 100
+brokers: ['paper']
+instruments: [256265]  # NIFTY 50 token
+
+# Optional configuration
+description: 'Rule-based mean reversion using RSI and Bollinger Bands'
+tags: ['mean-reversion', 'rules-based', 'rsi', 'bollinger-bands']
+risk_limits:
+  max_position_size: 10000.0
+  risk_multiplier: 1.0

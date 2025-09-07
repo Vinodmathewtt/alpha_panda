@@ -133,10 +133,20 @@ class SystemHealthMonitor:
         self.checks = checks
         self.is_healthy = False
         self.results: List[HealthCheckResult] = []
+        self.timings_ms: List[float] = []
 
     async def run_checks(self) -> bool:
-        """Runs all registered health checks concurrently."""
-        self.results = await asyncio.gather(*(check.check() for check in self.checks))
+        """Runs all registered health checks concurrently and records durations."""
+        import time
+        async def _timed(check: HealthCheck):
+            start = time.perf_counter()
+            res = await check.check()
+            dur = (time.perf_counter() - start) * 1000.0
+            return res, dur
+
+        timed_results = await asyncio.gather(*(_timed(c) for c in self.checks))
+        self.results = [r for r, _ in timed_results]
+        self.timings_ms = [d for _, d in timed_results]
         self.is_healthy = all(result.passed for result in self.results)
         return self.is_healthy
 

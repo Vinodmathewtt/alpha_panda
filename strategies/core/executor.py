@@ -32,12 +32,24 @@ class StrategyExecutor:
         # Performance optimization: O(1) instrument lookup
         self._supported_instruments = set(config.instrument_tokens)
     
+    @property
+    def processor(self) -> StrategyProcessor:
+        """Access to the composed processor for ML strategy runner integration"""
+        return self._processor
+    
+    @property 
+    def validator(self) -> StrategyValidator:
+        """Access to the composed validator"""
+        return self._validator
+    
     def can_process_tick(self, tick: MarketData) -> bool:
         """O(1) check if this executor should process tick"""
+        # Broker fan-out is handled by the runner at emission time.
+        # Keep processing gate limited to instrument membership and enabled flag.
         return (
-            tick.instrument_token in self._supported_instruments and
-            self.config.enabled and
-            self.context.broker in self.config.active_brokers
+            tick.instrument_token in self._supported_instruments
+            and self._processor.supports_instrument(int(tick.instrument_token))
+            and self.config.enabled
         )
     
     def process_tick(self, tick: MarketData) -> Optional[SignalResult]:

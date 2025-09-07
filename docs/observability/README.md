@@ -49,6 +49,18 @@ docker compose --profile observability restart prometheus
 - Service metrics v2 (latency p50/p95 panels): `docs/observability/grafana/alpha_panda_prometheus_dashboard_v2.json`
 - Consumer lag: `docs/observability/grafana/consumer_lag_dashboard.json`
 
+### Adding Panels for Paper Trading Metrics
+- Orders count: Panel (Stat or Bar) showing `sum by (status) (trading_orders_executed_total{broker="paper"})`.
+- Fill latency (paper): Histogram or Heatmap using `paper_fill_latency_seconds{broker="paper"}` with p50/p95.
+- Slippage (bps): Histogram over `paper_slippage_bps{broker="paper"}` and a Stat panel for last value.
+- Cash balance: Gauge over `paper_cash_balance{broker="paper"}` with `strategy_id` as legend.
+
+Example PromQL:
+- Orders filled (paper): `sum by (order_type) (trading_orders_executed_total{broker="paper",status="filled"})`
+- Paper fill latency p95: `histogram_quantile(0.95, sum(rate(paper_fill_latency_seconds_bucket[5m])) by (le))`
+- Average slippage bps (5m): `avg_over_time(paper_slippage_bps_sum[5m]) / avg_over_time(paper_slippage_bps_count[5m])`
+- Cash (per strategy): `paper_cash_balance{broker="paper"}`
+
 Grafana is configured to auto‑load dashboard JSONs from the dashboards folder. Changes are picked up automatically within ~10 seconds.
 
 ## Prometheus Scrapes

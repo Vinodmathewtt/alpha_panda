@@ -549,6 +549,9 @@ assert (settings.logs_dir / "trading.log").exists()
 Enable debug logging for troubleshooting:
 
 ```env
+# Preferred (enhanced logging):
+LOGGING__LEVEL=DEBUG
+# Fallback (basic logging):
 LOG_LEVEL=DEBUG
 MONITORING__LOG_JSON_FORMAT=false  # Human-readable format
 ```

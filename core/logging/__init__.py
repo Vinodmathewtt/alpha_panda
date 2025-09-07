@@ -80,6 +80,20 @@ def get_logger_safe(name: str, component: Optional[str] = None) -> structlog.Bou
     return get_logger(name, component)
 
 
+def bind_broker_context(logger: structlog.BoundLogger, broker: str, strategy_id: Optional[str] = None) -> structlog.BoundLogger:
+    """Bind broker context consistently to a logger.
+
+    Adds both `broker` and `broker_context` fields, and optionally `strategy_id`.
+    Returns a new BoundLogger with the context applied.
+    """
+    try:
+        ctx: Dict[str, Any] = {"broker": broker, "broker_context": broker}
+        if strategy_id:
+            ctx["strategy_id"] = strategy_id
+        return logger.bind(**ctx)
+    except Exception:
+        return logger
+
 # Enhanced logging functions (available only if enhanced logging is loaded)
 if ENHANCED_LOGGING_AVAILABLE:
     # Export enhanced logging functions

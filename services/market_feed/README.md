@@ -271,14 +271,33 @@ class OHLCData(BaseModel):
 ZERODHA__API_KEY=your_api_key
 ZERODHA__API_SECRET=your_api_secret
 
-# Redpanda Configuration
-REDPANDA__BOOTSTRAP_SERVERS=localhost:19092
+# Redpanda Configuration (dev)
+REDPANDA__BOOTSTRAP_SERVERS=localhost:9092
 REDPANDA__GROUP_ID_PREFIX=alpha-panda
 
 # Active Brokers (global app setting)
 # Market feed publishes to shared 'market.ticks' and does not require a per-broker setting
 ACTIVE_BROKERS=paper,zerodha
 ```
+
+### Throughput Tuning
+
+- Producer tuning: configure per-service Kafka producer options via `PRODUCER_TUNING`.
+  - Recommended for `market_feed`: small `linger_ms` (2–5ms) and `zstd` compression.
+  - Examples:
+    - Shell: `export PRODUCER_TUNING='{"market_feed": {"linger_ms": 2, "compression_type": "zstd"}}'`
+    - `.env`: `PRODUCER_TUNING={"market_feed": {"linger_ms": 2, "compression_type": "zstd"}}`
+  - Supported keys: `linger_ms`, `compression_type` (`gzip|snappy|lz4|zstd`), `batch_size`, `request_timeout_ms`, `max_in_flight_requests`.
+
+- Queue/backpressure behavior:
+  - `MARKET_FEED__QUEUE_MAXSIZE` (default 10000)
+  - `MARKET_FEED__ENQUEUE_BLOCK_TIMEOUT_MS` (0 or unset = drop immediately when full; >0 = block up to N ms then drop)
+  - Dev profile: smaller queue + 0ms block to surface pressure early.
+  - Perf profile: larger queue + small block timeout to smooth bursts.
+
+- Observability:
+  - `market_tick_enqueue_delay_seconds` (callback → enqueue) histogram.
+  - `market_tick_emit_latency_seconds` (dequeue → Kafka) histogram.
 
 ### Instrument Configuration
 
@@ -513,7 +532,7 @@ python -m pytest services/market_feed/tests/ -v
 ### Integration Testing
 ```bash
 # Test complete data capture
-python scripts/test_enhanced_market_data_capture.py
+python tests/integration/tools/tool_enhanced_market_data_capture.py
 ```
 
 ### Mock Data Testing

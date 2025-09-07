@@ -1,0 +1,31 @@
+strategy_name: 'NIFTY Hybrid Mean Reversion'
+strategy_class: 'hybrid_mean_reversion'  # Hybrid mean reversion strategy
+enabled: true
+parameters:
+  # Rule-based configuration
+  rules_config:
+    lookback_periods: 20
+    rsi_period: 14
+    rsi_oversold: 30
+    rsi_overbought: 70
+    bollinger_std: 2.0
+    position_size: 100
+  
+  # ML configuration
+  ml_config:
+    lookback_periods: 20
+    model_path: 'strategies/models/mean_reversion_model.joblib'
+    
+  # Hybrid decision policy
+  policy_type: 'conservative'  # More conservative for mean reversion
+  min_ml_confidence: 0.7
+
+brokers: ['paper']
+instruments: [256265]  # NIFTY 50 token
+
+# Optional configuration
+description: 'Hybrid mean reversion strategy combining RSI/Bollinger Bands with ML'
+tags: ['hybrid', 'mean-reversion', 'rules-based', 'machine-learning', 'conservative']
+risk_limits:
+  max_position_size: 10000.0
+  risk_multiplier: 1.0

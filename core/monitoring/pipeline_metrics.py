@@ -24,58 +24,64 @@ class PipelineStageMetrics:
 
 
 class PipelineMetricsCollector:
-    """Collects and tracks pipeline flow metrics across all services."""
+    """Collects and tracks pipeline flow metrics across all services.
+
+    Note: broker_context must be provided per call to avoid ambiguity. The collector
+    no longer stores a default broker namespace.
+    """
     
-    def __init__(self, redis_client, settings, broker_namespace=None):
+    def __init__(self, redis_client, settings):
         self.redis = redis_client
         self.settings = settings
-        # Use provided broker_namespace or default to "shared" for market feed
-        self.broker_namespace = broker_namespace or "shared"
         self.logger = get_monitoring_logger_safe("pipeline_metrics")
-        
         # TTL for metrics keys (5 minutes)
         self.metrics_ttl = 300
         
-    async def record_market_tick(self, tick_data: Dict[str, Any]) -> None:
+    async def record_market_tick(self, tick_data: Dict[str, Any], broker_context: str) -> None:
         """Record market tick received"""
         try:
             timestamp = datetime.utcnow().isoformat()
-            
-            # Increment count and set last info in a single pipeline
-            count_key = MetricsRegistry.market_ticks_count()
-            
-            # Store last tick info
-            last_key = MetricsRegistry.market_ticks_last()
+            # Determine namespace (shared for market feed by default)
+            namespace = broker_context
+
+            # Maintain legacy registry keys for compatibility
+            count_key_legacy = MetricsRegistry.market_ticks_count()
+            last_key_legacy = MetricsRegistry.market_ticks_last()
+
+            # Normalized pipeline keys: pipeline:market_ticks:{broker}:{last|count}
+            count_key = f"pipeline:market_ticks:{namespace}:count"
+            last_key = f"pipeline:market_ticks:{namespace}:last"
             last_data = {
                 "timestamp": timestamp,
                 "symbol": tick_data.get("symbol"),
                 "instrument_token": tick_data.get("instrument_token"),
                 "last_price": tick_data.get("last_price")
             }
-            
+            # Write to both legacy and normalized keys during transition
             pipe = self.redis.pipeline(transaction=False)
+            pipe.incr(count_key_legacy)
+            pipe.setex(last_key_legacy, self.metrics_ttl, json.dumps(last_data))
             pipe.incr(count_key)
             pipe.setex(last_key, self.metrics_ttl, json.dumps(last_data))
             res = await pipe.execute()
-            tick_count = int(res[0]) if res and len(res) > 0 else 0
-            
+            # First incr is legacy; second incr is normalized
+            tick_count = int(res[2]) if res and len(res) > 2 else 0
+
             self.logger.debug("Market tick recorded", 
                             instrument_token=tick_data.get("instrument_token"),
                             tick_count=tick_count,
-                            broker=self.broker_namespace)
+                            broker=namespace)
                             
         except Exception as e:
-            self.logger.error("Failed to record market tick", 
-                            error=str(e),
-                            broker=self.broker_namespace)
+            self.logger.error("Failed to record market tick", error=str(e), broker=broker_context)
         
-    async def record_signal_generated(self, signal: Dict[str, Any], broker_context: Optional[str] = None) -> None:
+    async def record_signal_generated(self, signal: Dict[str, Any], broker_context: str) -> None:
         """Record trading signal generated"""
         try:
             timestamp = datetime.utcnow().isoformat()
             
             # Select namespace (explicit broker preferred)
-            namespace = broker_context or self.broker_namespace
+            namespace = broker_context
 
             # Increment count and set last info via pipeline
             count_key = MetricsRegistry.signals_count(namespace)
@@ -103,17 +109,15 @@ class PipelineMetricsCollector:
                             broker=namespace)
                             
         except Exception as e:
-            self.logger.error("Failed to record signal generation",
-                            error=str(e),
-                            broker=self.broker_namespace)
+            self.logger.error("Failed to record signal generation", error=str(e), broker=broker_context)
     
-    async def record_signal_validated(self, signal: Dict[str, Any], passed: bool, broker_context: Optional[str] = None) -> None:
+    async def record_signal_validated(self, signal: Dict[str, Any], passed: bool, broker_context: str) -> None:
         """Record signal validation result"""
         try:
             timestamp = datetime.utcnow().isoformat()
             
             # Select namespace (explicit broker preferred)
-            namespace = broker_context or self.broker_namespace
+            namespace = broker_context
 
             # Increment appropriate count
             if passed:
@@ -147,17 +151,15 @@ class PipelineMetricsCollector:
                             broker=namespace)
                             
         except Exception as e:
-            self.logger.error("Failed to record signal validation",
-                            error=str(e),
-                            broker=self.broker_namespace)
+            self.logger.error("Failed to record signal validation", error=str(e), broker=broker_context)
     
-    async def record_order_processed(self, order: Dict[str, Any], broker_context: Optional[str] = None) -> None:
+    async def record_order_processed(self, order: Dict[str, Any], broker_context: str) -> None:
         """Record order processed by trading engine"""
         try:
             timestamp = datetime.utcnow().isoformat()
             
             # Select namespace (explicit broker preferred)
-            namespace = broker_context or self.broker_namespace
+            namespace = broker_context
 
             # Increment count and set last via pipeline
             count_key = MetricsRegistry.orders_count(namespace)
@@ -185,17 +187,15 @@ class PipelineMetricsCollector:
                             broker=namespace)
                             
         except Exception as e:
-            self.logger.error("Failed to record order processing",
-                            error=str(e),
-                            broker=self.broker_namespace)
+            self.logger.error("Failed to record order processing", error=str(e), broker=broker_context)
     
-    async def record_portfolio_update(self, portfolio_id: str, update_data: Dict[str, Any], broker_context: Optional[str] = None) -> None:
+    async def record_portfolio_update(self, portfolio_id: str, update_data: Dict[str, Any], broker_context: str) -> None:
         """Record portfolio update"""
         try:
             timestamp = datetime.utcnow().isoformat()
             
             # Select namespace (explicit broker preferred)
-            namespace = broker_context or self.broker_namespace
+            namespace = broker_context
 
             # Increment count and set last via pipeline
             count_key = MetricsRegistry.portfolio_updates_count(namespace)
@@ -221,14 +221,13 @@ class PipelineMetricsCollector:
                             broker=namespace)
                             
         except Exception as e:
-            self.logger.error("Failed to record portfolio update",
-                            error=str(e),
-                            broker=self.broker_namespace)
+            self.logger.error("Failed to record portfolio update", error=str(e), broker=broker_context)
     
-    async def get_pipeline_health(self) -> Dict[str, Any]:
+    async def get_pipeline_health(self, broker_context: str) -> Dict[str, Any]:
         """Get overall pipeline health status"""
         try:
             now = datetime.utcnow()
+            namespace = broker_context
             health = {}
             
             # Check each stage for recent activity
@@ -241,7 +240,7 @@ class PipelineMetricsCollector:
             ]
             
             for stage in stages:
-                stage_health = await self._get_stage_health(stage, now)
+                stage_health = await self._get_stage_health(stage, now, namespace)
                 health[stage] = stage_health
             
             # Calculate overall health
@@ -251,7 +250,7 @@ class PipelineMetricsCollector:
             )
             
             return {
-                "broker": self.broker_namespace,
+                "broker": namespace,
                 "timestamp": now.isoformat(),
                 "overall_healthy": all_healthy,
                 "stages": health,
@@ -259,21 +258,19 @@ class PipelineMetricsCollector:
             }
             
         except Exception as e:
-            self.logger.error("Failed to get pipeline health",
-                            error=str(e),
-                            broker=self.broker_namespace)
+            self.logger.error("Failed to get pipeline health", error=str(e), broker=broker_context)
             return {
-                "broker": self.broker_namespace,
+                "broker": broker_context,
                 "timestamp": datetime.utcnow().isoformat(),
                 "overall_healthy": False,
                 "error": str(e)
             }
     
-    async def _get_stage_health(self, stage_name: str, now: datetime) -> Dict[str, Any]:
+    async def _get_stage_health(self, stage_name: str, now: datetime, namespace: str) -> Dict[str, Any]:
         """Get health status for a specific pipeline stage"""
         try:
-            last_key = f"pipeline:{stage_name}:{self.broker_namespace}:last"
-            count_key = f"pipeline:{stage_name}:{self.broker_namespace}:count"
+            last_key = f"pipeline:{stage_name}:{namespace}:last"
+            count_key = f"pipeline:{stage_name}:{namespace}:count"
             
             # Get last activity data
             last_data_str = await self.redis.get(last_key)
@@ -317,18 +314,18 @@ class PipelineMetricsCollector:
         except Exception as e:
             self.logger.error(f"Failed to get {stage_name} stage health",
                             error=str(e),
-                            broker=self.broker_namespace)
+                            broker=namespace)
             return {
                 "stage_name": stage_name,
                 "healthy": False,
                 "error": str(e)
             }
     
-    async def increment_count(self, metric_name: str, broker: str = None) -> None:
+    async def increment_count(self, metric_name: str, broker: str) -> None:
         """Increment a metric counter (generic method for backwards compatibility)"""
         try:
             # Use the provided broker or fall back to instance broker_namespace
-            namespace = broker or self.broker_namespace
+            namespace = broker
             count_key = f"pipeline:{metric_name}:{namespace}:count"
             await self.redis.incr(count_key)
             
@@ -337,16 +334,13 @@ class PipelineMetricsCollector:
                             broker=namespace)
                             
         except Exception as e:
-            self.logger.error("Failed to increment count", 
-                            metric=metric_name,
-                            error=str(e),
-                            broker=broker or self.broker_namespace)
+            self.logger.error("Failed to increment count", metric=metric_name, error=str(e), broker=broker)
     
-    async def set_last_activity_timestamp(self, metric_name: str, broker: str = None) -> None:
+    async def set_last_activity_timestamp(self, metric_name: str, broker: str) -> None:
         """Set the last activity timestamp for a metric"""
         try:
             # Use the provided broker or fall back to instance broker_namespace  
-            namespace = broker or self.broker_namespace
+            namespace = broker
             timestamp = datetime.utcnow().isoformat()
             
             last_key = f"pipeline:{metric_name}:{namespace}:last_activity"
@@ -362,12 +356,9 @@ class PipelineMetricsCollector:
                             broker=namespace)
                             
         except Exception as e:
-            self.logger.error("Failed to set last activity timestamp",
-                            metric=metric_name,
-                            error=str(e),
-                            broker=broker or self.broker_namespace)
+            self.logger.error("Failed to set last activity timestamp", metric=metric_name, error=str(e), broker=broker)
     
-    async def reset_metrics(self) -> None:
+    async def reset_metrics(self, broker_context: str) -> None:
         """Reset all pipeline metrics (useful for testing)"""
         try:
             stages = [
@@ -382,21 +373,17 @@ class PipelineMetricsCollector:
             keys_to_delete = []
             for stage in stages:
                 keys_to_delete.extend([
-                    f"pipeline:{stage}:{self.broker_namespace}:last",
-                    f"pipeline:{stage}:{self.broker_namespace}:count"
+                    f"pipeline:{stage}:{broker_context}:last",
+                    f"pipeline:{stage}:{broker_context}:count"
                 ])
             
             if keys_to_delete:
                 await self.redis.delete(*keys_to_delete)
                 
-            self.logger.info("Pipeline metrics reset",
-                           keys_deleted=len(keys_to_delete),
-                           broker=self.broker_namespace)
+            self.logger.info("Pipeline metrics reset", keys_deleted=len(keys_to_delete), broker=broker_context)
                            
         except Exception as e:
-            self.logger.error("Failed to reset metrics",
-                            error=str(e),
-                            broker=self.broker_namespace)
+            self.logger.error("Failed to reset metrics", error=str(e), broker=broker_context)
 
     async def set_strategy_count(self, broker: str, count: int) -> None:
         """Record the number of active strategies targeting a broker.

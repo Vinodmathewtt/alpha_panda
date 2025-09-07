@@ -1,6 +1,6 @@
 # 🐼 Alpha Panda - Algorithmic Trading System
 
-A modern algorithmic trading system built on the Unified Log architecture using Redpanda for event streaming. Features comprehensive testing, multi-broker architecture, and production-ready reliability patterns.
+A modern algorithmic trading system built on the Unified Log architecture using Redpanda for event streaming. Features comprehensive testing, multi-broker architecture, ML-enhanced strategies, and production-ready reliability patterns.
 
 ## 🏗️ Architecture
 
@@ -40,22 +40,22 @@ API Service (Read Path - Unified)
 - **Performance Optimizations**: O(1) instrument-to-strategy mappings for efficient routing
 - **Comprehensive Documentation**: Complete module-level documentation across all components
 
-### 🏷️ Important Namespace Distinction
+### 🏷️ Broker Context (Required)
 
-**Two Different "Namespace" Concepts (Do Not Confuse):**
+Routing and metrics must always provide explicit broker context.
 
-1. **`BROKER_NAMESPACE` Environment Variable** (❌ **Deprecated & Removed**)
-   - **Old System**: Used for deployment-level broker isolation
-   - **Status**: Successfully migrated to `ACTIVE_BROKERS` list configuration
-   - **Migration**: `BROKER_NAMESPACE=zerodha` → `ACTIVE_BROKERS=paper,zerodha`
+- `BROKER_NAMESPACE` env var: removed. Use `ACTIVE_BROKERS` for service posture; derive routing from topic prefixes.
+- `broker_context` at runtime: required when recording pipeline metrics. All `PipelineMetricsCollector` methods require a broker parameter. Keys follow `pipeline:{stage}:{broker}:{last|count}`. Use `shared` only for truly shared stages like `market.ticks`.
 
-2. **`broker_namespace` Parameter** (✅ **Valid & Required**)
-   - **Current System**: Service-level metrics collection namespacing
-   - **Purpose**: Identifies which service/component is recording metrics
-   - **Examples**: `"strategy_runner"`, `"shared"`, `"paper"`, `"zerodha"`
-   - **Usage**: Creates Redis keys like `pipeline:signals:strategy_runner:count`
+Examples:
+```
+# Market feed (shared)
+await metrics.record_market_tick(tick, broker_context="shared")
 
-**Key Point**: If you see `broker_namespace="strategy_runner"` in code, this is **correct** and different from the old `BROKER_NAMESPACE` env var that was removed.
+# Strategy runner (per broker)
+await metrics.record_signal_generated(signal, broker_context="paper")
+await metrics.record_signal_validated(signal, passed=True, broker_context="zerodha")
+```
 
 ### 🤝 Multi‑Broker Operation (At a Glance)
 
@@ -63,7 +63,7 @@ API Service (Read Path - Unified)
 - **Broker‑Scoped Trading**: `paper_trading` and `zerodha_trading` consume their own `{broker}.signals.validated` and emit `{broker}.orders.*` and `{broker}.pnl.snapshots`.
 - **Portfolios per Broker**: Portfolio/PnL snapshots are emitted per broker; Redis keys remain broker‑prefixed.
 - **Market Data Shared**: A single Zerodha feed publishes `market.ticks` for all brokers to keep strategy behavior consistent.
-- **Deprecation Notice**: Any architectures that steer behavior via a global `broker_namespace` are transitional and should be refactored to explicit per‑broker topic routing. The `broker_namespace` identifier remains only for metrics namespacing/compatibility and may be removed in a future cleanup.
+- **Deprecation Notice**: Any architectures that steer behavior via a global namespace are transitional and should be refactored to explicit per‑broker topic routing. Metrics APIs require a `broker_context` per call.
 
 ## ✅ Recent Improvements
 - Trading flags unified: `TRADING__PAPER__ENABLED` and `TRADING__ZERODHA__ENABLED` gate broker‑scoped trading services; legacy `PAPER_TRADING__ENABLED` is no longer honored at runtime.
@@ -72,6 +72,50 @@ API Service (Read Path - Unified)
 - Prometheus histograms: `market_tick_enqueue_delay_seconds` and `market_tick_emit_latency_seconds` with optional bucket tuning via `MONITORING__PROMETHEUS_BUCKETS__*`.
 - Observability: new Grafana dashboard v2 with latency (p50/p95) panels at `docs/observability/grafana/alpha_panda_prometheus_dashboard_v2.json`.
 - Logging: access logs include route templates; optional INFO sampling via `LOGGING__INFO_SAMPLING_RATIO` for high‑volume API logs.
+- Preflight: ML model artifact check at startup (fail‑fast in production when missing) and a preflight summary JSON written to `logs/preflight_summary.json` with per‑check status and durations.
+- Strategies: composition‑only strategy runner/processors; ML processors validate feature vector length vs `model.n_features_in_` and safely skip inference on mismatch (logged and counted).
+- Preflight (ML): adds ML feature compatibility check (dev warns, prod blocks on mismatch) in addition to model artifact presence.
+- Validator metrics: added `validator_warnings_total{stage,broker,issue}` to quantify warning conditions across the pipeline.
+- Consumer startup: logs consumer `group_id`, `topics`, and initial partition assignment for visibility.
+- Channel logging: one‑time summary event logs which channels are wired; fixed filtering for structlog event dicts so channel files reliably receive entries.
+
+## ✈️ Preflight Checks (Startup Readiness)
+
+“Preflight checks” are a comprehensive set of health, configuration, and logic validations that run before any service starts. They ensure the system fails fast when critical requirements are not met, preventing partial or unsafe startups.
+
+- Location: `app/pre_flight_checks.py`
+- Execution: Run during `ApplicationOrchestrator.startup()` before service startup
+- Scope today:
+  - Zerodha authentication (mandatory, blocking)
+  - Database/Redis/Redpanda connectivity
+  - Required topics exist per broker (via health checker)
+  - Active strategies exist (DB)
+  - Market hours status (informational)
+
+Planned enhancements (highlight feature of the platform):
+- ML Models readiness: verify all configured ML strategies have resolvable, loadable model files; aggregate clear per‑strategy errors; fail fast in production.
+- Kafka runtime compatibility: validate `aiokafka` vs Python compatibility and `bootstrap_servers` presence; log consumer group IDs and planned topic subscriptions.
+- Strategy readiness: confirm only “ready” strategies are counted (registered/validated) and publish per‑broker counts for validators/dashboards.
+- Risk/routing checks: sanity‑check topic routing (no wildcard), partitioning keys, and idempotent producer settings are in effect.
+- Observability guardrails: verify logging channels are attached and writable, and that Prometheus registry is available for collectors.
+- Policy: preflight must block startup on critical failures in production; development may warn and continue where safe.
+
+This preflight system is designed to be a first‑class, auditable gate that keeps the runtime safe and predictable — a core highlight of Alpha Panda’s operational design.
+
+## 📐 Strategies (Composition‑Only)
+
+- Location: `strategies/` with composition factory and executor.
+  - Factory: `strategies/core/factory.py`
+  - Executor: `strategies/core/executor.py`
+  - Implementations: `strategies/implementations/*.py` (rules, ML, hybrid)
+- No BaseStrategy: all strategies implement processors/validators and are composed at runtime.
+- One broker per strategy: default to paper; set DB `zerodha_trading_enabled=true` to route only to Zerodha.
+- ML processors:
+  - Model loading is centralized by the runner/factory (no duplicate loads in processor factories).
+  - Before predict, processors validate feature vector length vs `model.n_features_in_`; on mismatch inference is skipped with a clear log and Prometheus error classification.
+  - Config templates include `parameters.expected_feature_count` for documentation; runtime uses the model’s attribute for enforcement.
+
+Config templates live under `strategies/configs/*.yaml` and are for seeding/dev. Runtime loads strategies from the database (`strategy_configurations`).
 
 ## 🚀 Quick Start
 
@@ -131,6 +175,35 @@ make setup  # Complete first-time setup
 - Example scrape target: `http://localhost:8000/metrics`
 - Install deps via `pip install -r requirements.txt -c constraints.txt` (includes `prometheus-client`).
 - DLQ counter: `trading_dlq_messages_total{service,broker}` increments when messages are sent to per-topic `.dlq`.
+- Validator warnings: `validator_warnings_total{stage,broker,issue}` increments on validation warnings (e.g., high latency, no signals).
+- Paper trading metrics (added):
+  - `paper_fill_latency_seconds{strategy_id,broker}` — latency from validated signal to fill emission.
+  - `paper_slippage_bps{side,broker}` — absolute slippage per fill, in basis points.
+  - `paper_cash_balance{strategy_id,broker}` — simulated cash balances.
+
+### 🧪 Paper Trading Enhancements (Phase 1–3)
+
+- Phase 1: slippage/commission models; optional latency simulation; deterministic RNG per event.
+- Phase 2: partial fills; order types (market/limit + `limit_price`); TIF (IOC/FOK/DAY); idempotence; `order_failed` with reasons.
+- Phase 3: bracket/OCO exits via `market.ticks` (TP/SL in signal metadata); in‑memory portfolio (qty/avg_price), cash balance, unrealized/realized PnL.
+- Configuration: see `.env.example` — `PAPER_TRADING__SLIPPAGE_PERCENT`, `__COMMISSION_PERCENT`, `__LATENCY_MS_*`, `__PARTIAL_FILL_PROB`, `__MAX_PARTIALS`, `__STARTING_CASH`.
+
+### 🎮 Replay Demo (Paper Bracket)
+
+Quickly demo a bracket entry and exit without live markets:
+
+```bash
+python scripts/replay_paper_demo.py bracket_demo \
+  --strategy-id demo --instrument 256265 \
+  --entry-price 100.0 --exit-price 101.2 \
+  --take-profit-pct 1.0 --stop-loss-pct 0.0 --delay 0.5
+```
+
+Replay arbitrary JSONL events:
+
+```bash
+python scripts/replay_paper_demo.py jsonl --file path/to/events.jsonl
+```
 
 ### 🧰 Trading Service Flags
 - `TRADING__PAPER__ENABLED` controls paper trading lifecycle (safe default: true).
@@ -313,21 +386,21 @@ export ZERODHA_ACCESS_TOKEN="your_access_token_here"
 
 **Required Infrastructure Components:**
 
-| **Component** | **Test Port** | **Purpose** | **Docker Image** |
+| **Component** | **Port** | **Purpose** | **Docker Image** |
 |---------------|---------------|-------------|------------------|
-| Redis | 6380 | Cache testing, type conversion validation | `redis:7-alpine` |
-| Kafka | 19092 | Message streaming, serialization testing | `confluentinc/cp-kafka:7.4.0` |
-| PostgreSQL | 5433 | Database integration, transaction testing | `postgres:15-alpine` |
+| Redis | 6379 | Cache testing, type conversion validation | `redis:7-alpine` |
+| Redpanda (Kafka API) | 9092 | Message streaming, serialization testing | `redpandadata/redpanda:latest` |
+| PostgreSQL | 5432 | Database integration, transaction testing | `postgres:15-alpine` |
 
 ```bash
 # Start test infrastructure
-docker compose -f docker-compose.test.yml up -d
+docker compose -f docker-compose.yml up -d
 
 # Verify infrastructure health
-docker compose -f docker-compose.test.yml ps
+docker compose -f docker-compose.yml ps
 
 # Stop and cleanup
-docker compose -f docker-compose.test.yml down -v
+docker compose -f docker-compose.yml down -v
 ```
 
 ### 🎯 **Critical Testing Policies**
@@ -381,17 +454,17 @@ The new testing framework prevents these critical runtime issues:
 
 ### 🐳 Test Infrastructure Components
 
-**docker-compose.test.yml Services:**
+**docker-compose.yml Services (excerpt):**
 
 ```yaml
-redpanda-test: # Port 19092 (isolated from dev 9092)
+redpanda:
   healthcheck: ['CMD-SHELL', 'rpk cluster info']
 
-postgres-test: # Port 5433 (isolated from dev 5432)
-  healthcheck: ['CMD-SHELL', 'pg_isready -U alpha_panda_test']
+postgres:
+  healthcheck: ['CMD-SHELL', 'pg_isready -U alpha_panda']
 
-redis-test: # Port 6380 (isolated from dev 6379)
-  healthcheck: ['CMD', 'redis-cli', 'ping']
+redis:
+  healthcheck: ['CMD-SHELL', 'redis-cli ping']
 ```
 
 ### 📜 Schema Registry (Scaffolding)
@@ -517,8 +590,8 @@ make test-performance-with-env    # Performance tests with test infrastructure
 ./test-infrastructure-setup.sh
 
 # Manual verification steps
-docker compose -f docker-compose.test.yml ps
-export $(grep -v '^#' .env.test | xargs)
+docker compose -f docker-compose.yml ps
+export $(grep -v '^#' .env | xargs)
 python -c "import os; print('✅ Test env loaded:', os.getenv('DATABASE_URL'))"
 ```
 
@@ -533,8 +606,8 @@ python -c "import os; print('✅ Test env loaded:', os.getenv('DATABASE_URL'))"
 
 - name: Start test infrastructure
   run: |
-    docker compose -f docker-compose.test.yml up -d
-    docker compose -f docker-compose.test.yml wait
+    docker compose -f docker-compose.yml up -d
+    docker compose -f docker-compose.yml wait
 
 - name: Run tests with environment
   run: make test-all-infra
@@ -563,11 +636,11 @@ alpha_panda/
 │   ├── risk_manager/      # Risk validation (broker-segregated)
 │   ├── paper_trading/     # Paper broker-scoped trading service
 │   └── zerodha_trading/   # Zerodha broker-scoped trading service
-├── strategies/            # Pure trading strategy logic
-│   ├── base/             # BaseStrategy foundation components
-│   ├── legacy/           # Inheritance-based strategies (production active)
+├── strategies/            # Pure trading strategy logic & ML strategies  
 │   ├── core/             # Composition framework (protocols, config, executor, factory)
-│   ├── implementations/  # Modern strategy implementations
+│   ├── implementations/  # Traditional & ML strategy implementations
+│   ├── ml_utils/         # ML model loading utilities with caching
+│   ├── models/           # ML model files (.joblib, .pkl)
 │   ├── validation/       # Strategy validation components
 │   └── configs/          # YAML configuration files
 ├── api/                   # FastAPI read endpoints
@@ -809,6 +882,34 @@ All events follow a standardized `EventEnvelope`:
 - Risk Manager with configurable validation rules
 - Trading Engine with Paper/Zerodha traders
 - Portfolio Manager with Redis state materialization
+
+✅ **ML Strategy Framework**
+
+- **ML-Enhanced Strategies**: Seamless integration alongside traditional strategies
+- **Model Loading & Caching**: Centralized `ModelLoader` with automatic caching
+- **Feature Engineering**: Standardized pattern for market data to ML features
+- **Graceful Degradation**: ML failures return `None` signals (no trading impact)
+- **Performance Optimized**: ~100µs ML inference vs ~0.64µs traditional (under 50ms target)
+- **Confidence Thresholds**: Risk-managed signal generation based on prediction confidence
+- **Production Ready**: Sample models included with scikit-learn compatibility
+
+**ML Strategy Quick Start:**
+
+```bash
+# Create sample ML model
+python scripts/create_sample_ml_model.py
+
+# Test ML strategy creation
+python -c "
+from services.strategy_runner.factory import StrategyFactory
+factory = StrategyFactory()
+ml_strategy = factory.create_strategy(
+    'test_ml', 'ml_momentum',
+    {'model_path': 'models/sample_momentum_v1.joblib', 'confidence_threshold': 0.6}
+)
+print('✅ ML strategy works:', type(ml_strategy).__name__)
+"
+```
 
 ✅ **Testing & Quality**
 

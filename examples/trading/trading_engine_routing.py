@@ -24,11 +24,11 @@ async def _handle_signal(self, signal: Dict[str, Any]):
 
 # PaperTrader publishes to segregated topic
 await self.producer.send(
-    topic="orders.filled.paper",  # NEVER mix with zerodha topics
+    topic="paper.orders.filled",  # NEVER mix with zerodha topics
     key=fill_event["key"],
     value={
         "data": {
-            "trading_mode": "paper",  # ALWAYS identify mode
+            "execution_mode": "paper",  # ALWAYS identify mode
             "fill_price": simulated_price,
             "commission": calculated_commission
         }
@@ -37,11 +37,11 @@ await self.producer.send(
 
 # ZerodhaTrader publishes to segregated topic  
 await self.producer.send(
-    topic="orders.filled.zerodha",   # NEVER mix with paper topics
+    topic="zerodha.orders.filled",   # NEVER mix with paper topics
     key=fill_event["key"],
     value={
         "data": {
-            "trading_mode": "zerodha",   # ALWAYS identify mode
+            "execution_mode": "zerodha",   # ALWAYS identify mode
             "broker_order_id": actual_id,
             "fill_price": broker_price
         }

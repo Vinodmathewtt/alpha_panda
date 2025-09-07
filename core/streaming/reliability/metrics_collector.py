@@ -47,8 +47,11 @@ class MetricsCollector:
         
         # Log broker-specific success if context available
         if broker_context:
-            logger.debug(f"Success recorded for {broker_context}", 
-                        duration_ms=processing_duration * 1000)
+            logger.debug(
+                "Success recorded for %s",
+                broker_context,
+                extra={"duration_ms": processing_duration * 1000},
+            )
         
         # Update health status
         self._update_health_status()

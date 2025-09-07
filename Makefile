@@ -1,5 +1,5 @@
 # Alpha Panda Makefile
-.PHONY: help install dev up down bootstrap seed run test test-setup test-unit test-integration test-e2e test-performance test-chaos test-all test-status test-report test-clean clean
+.PHONY: help install dev up down bootstrap seed run test test-setup test-unit test-integration test-e2e test-performance test-chaos test-all test-status test-report test-clean clean clean-caches clean-coverage clean-artifacts
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -37,10 +37,10 @@ test:  ## Run unit tests
 	@echo "🧪 Running unit tests..."
 	@./scripts/test-infrastructure.sh unit
 
-test-setup:  ## Set up test environment with health checks
+test-setup:  ## Set up test environment with health checks (uses docker-compose.yml)
 	@echo "🚀 Setting up test environment..."
-	docker compose -f docker-compose.test.yml up -d
-	docker compose -f docker-compose.test.yml wait
+	docker compose -f docker-compose.yml up -d
+	docker compose -f docker-compose.yml wait || true
 	@echo "✓ Test infrastructure ready and healthy"
 
 test-unit:  ## Run unit tests only
@@ -75,29 +75,42 @@ test-report:  ## Generate test reports
 	@echo "📋 Generating test reports..."
 	@./scripts/test-infrastructure.sh report
 
-test-clean:  ## Clean test infrastructure
+test-clean:  ## Clean test infrastructure (uses docker-compose.yml)
 	@echo "🧹 Cleaning test infrastructure..."
-	docker compose -f docker-compose.test.yml down -v
+	docker compose -f docker-compose.yml down -v
 	docker system prune -f
 
 clean:  ## Clean up containers and volumes
 	docker-compose down -v
 	docker system prune -f
 
-test-with-env:  ## Run integration/e2e tests with test environment
+clean-caches:  ## Remove local tool caches (.pytest_cache, .mypy_cache, .hypothesis, .cache)
+	@echo "🧹 Removing local tool caches..."
+	rm -rf .pytest_cache .mypy_cache .hypothesis .cache || true
+	@echo "✓ Caches removed (will be recreated automatically)"
+
+clean-coverage:  ## Remove coverage reports (.coverage, coverage.xml, htmlcov)
+	@echo "🧽 Removing coverage artifacts..."
+	rm -f .coverage .coverage.* coverage.xml || true
+	rm -rf htmlcov || true
+	@echo "✓ Coverage artifacts removed"
+
+clean-artifacts: clean-caches clean-coverage  ## Remove caches and coverage artifacts
+
+test-with-env:  ## Run integration/e2e tests with current .env
 	@echo "🧪 Running tests with test environment..."
-	@export $$(grep -v '^#' .env.test | xargs) && \
+	@export $$(grep -v '^#' .env | xargs) && \
 	 python -m pytest tests/integration/ tests/e2e/ -v --tb=short
 
-test-performance-with-env:  ## Run performance tests with test environment
+test-performance-with-env:  ## Run performance tests with current .env
 	@echo "⚡ Running performance tests with test environment..."
-	@export $$(grep -v '^#' .env.test | xargs) && \
+	@export $$(grep -v '^#' .env | xargs) && \
 	 python -m pytest tests/performance/ -v -m "not slow"
 
-test-all-infra:  ## Run all infrastructure tests
+test-all-infra:  ## Run all infrastructure tests (uses docker-compose.yml)
 	@echo "🎯 Running complete infrastructure test suite..."
 	make test-setup
-	@export $$(grep -v '^#' .env.test | xargs) && \
+	@export $$(grep -v '^#' .env | xargs) && \
 	 python -m pytest tests/integration/ tests/e2e/ tests/performance/ -v
 
 setup: dev up bootstrap seed  ## Complete setup for first run

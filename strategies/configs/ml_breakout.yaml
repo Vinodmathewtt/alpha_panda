@@ -1,0 +1,15 @@
+brokers:
+- paper
+enabled: true
+instrument_tokens:
+- 256265
+module_name: strategies.implementations.ml_breakout
+parameters:
+  model_path: models/sample_momentum_v1.joblib
+  lookback_periods: 30
+  position_size: 100
+  confidence_threshold: 0.65
+  expected_feature_count: 4
+strategy_class: MLBreakoutProcessor
+strategy_name: ML_Breakout_Sample_1
+use_composition: true

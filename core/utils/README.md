@@ -226,14 +226,15 @@ async def retry_with_backoff(operation, max_retries=3):
     raise PermanentError("Max retries exceeded")
 ```
 
-### DLQ Routing
+### DLQ Routing (per-topic .dlq)
 ```python
 async def handle_message_with_dlq(message, processor):
     try:
         await processor(message)
     except PermanentError as e:
-        # Send to dead letter queue
-        await dlq_producer.send("global.dead_letter_queue", {
+        # Send to a per-topic DLQ (e.g., "paper.orders.filled.dlq")
+        dlq_topic = f"{message.topic}.dlq"
+        await dlq_producer.send(dlq_topic, {
             "original_message": message,
             "error": str(e),
             "error_details": e.details,

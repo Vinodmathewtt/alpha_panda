@@ -92,7 +92,7 @@ Defaults are configured in `pytest.ini` to only collect tests under `tests/` and
 - Docker and Docker Compose installed
 - Python 3.11+ with virtual environment
 - Minimum 4GB RAM for test infrastructure
-- Ports 6380, 19092, 5433, 2181 available
+- Ports 6379, 9092, 5432 available
 
 ### Environment Variables (Required for E2E tests)
 
@@ -164,7 +164,7 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt -c constraints.txt
 
 # 3. Start test infrastructure
-docker compose -f docker-compose.test.yml up -d
+docker compose -f docker-compose.yml up -d
 
 # 4. Wait for infrastructure to be ready
 sleep 30
@@ -180,21 +180,23 @@ python -m pytest tests/unit/ -v
 **1. Infrastructure Not Available**
 ```bash
 # Check if containers are running
-docker compose -f docker-compose.test.yml ps
+docker compose -f docker-compose.yml ps
 
 # Check container logs
-docker compose -f docker-compose.test.yml logs redis
-docker compose -f docker-compose.test.yml logs kafka
-docker compose -f docker-compose.test.yml logs postgres
+docker compose -f docker-compose.yml logs redis
+docker compose -f docker-compose.yml logs redpanda
+docker compose -f docker-compose.yml logs postgres
 ```
 
 **2. Port Conflicts**
 ```bash
 # Check if ports are in use
-netstat -tulpn | grep ":6380\|:19092\|:5433\|:2181"
+netstat -tulpn | grep ":6379\|:9092\|:5432"
 
-# Kill processes using test ports
-sudo lsof -ti:6380 | xargs kill -9
+# Kill processes using dev ports (adjust as needed)
+sudo lsof -ti:6379 | xargs kill -9 || true
+sudo lsof -ti:9092 | xargs kill -9 || true
+sudo lsof -ti:5432 | xargs kill -9 || true
 ```
 
 **3. Permission Issues**
@@ -207,7 +209,7 @@ sudo usermod -aG docker $USER
 **4. Test Data Cleanup**
 ```bash
 # Clean up test data
-docker compose -f docker-compose.test.yml down -v
+docker compose -f docker-compose.yml down -v
 docker volume prune -f
 docker system prune -f
 ```

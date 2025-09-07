@@ -1,3 +1,0 @@
-ISSUES_TO_BE_FIXED.md ----> Implemented. But review the codebase for implementation.
-
-STRATEGY_IMPROVEMENTS.md ---> Yet to be implemented. But review the document against current codebase before implementing.

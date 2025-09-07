@@ -16,8 +16,30 @@ def _install_fakes():
     ak_admin.AIOKafkaAdminClient = object
     sys.modules.setdefault("aiokafka.admin", ak_admin)
 
+    # Fake aiokafka.errors
+    ak_errors = types.ModuleType("aiokafka.errors")
+    class _KafkaError(Exception):
+        pass
+    class _KafkaConnectionError(_KafkaError):
+        pass
+    ak_errors.KafkaError = _KafkaError
+    ak_errors.KafkaConnectionError = _KafkaConnectionError
+    sys.modules.setdefault("aiokafka.errors", ak_errors)
+
+    # Fake aiokafka.structs
+    ak_structs = types.ModuleType("aiokafka.structs")
+    class _TopicPartition:
+        def __init__(self, topic, partition):
+            self.topic = topic
+            self.partition = partition
+    ak_structs.TopicPartition = _TopicPartition
+    sys.modules.setdefault("aiokafka.structs", ak_structs)
+
     # Fake redis.asyncio to satisfy import
     redis_asyncio = types.ModuleType("redis.asyncio")
+    class _Redis:
+        pass
+    redis_asyncio.Redis = _Redis
     sys.modules.setdefault("redis.asyncio", redis_asyncio)
 
 
@@ -75,4 +97,3 @@ async def _run():
 
 def test_stream_processor_uses_shared_broker_for_market_ticks():
     asyncio.run(_run())
-

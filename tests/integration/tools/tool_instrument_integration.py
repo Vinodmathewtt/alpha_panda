@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script to verify instrument data service integration.
+Ad-hoc script to verify instrument data service integration.
 """
 
 import asyncio
@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(project_root))
 
 from core.config.settings import Settings
@@ -74,3 +74,4 @@ async def test_instrument_integration():
 
 if __name__ == "__main__":
     asyncio.run(test_instrument_integration())
+

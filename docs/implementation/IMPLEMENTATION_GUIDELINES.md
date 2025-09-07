@@ -198,8 +198,8 @@ See [README.md](README.md) for complete project structure. **All key modules hav
 - **Performance Tests**: Load testing with >100 msg/sec throughput targets
 
 ### Critical Testing Infrastructure
-- **Health-Gated Startup**: `docker compose -f docker-compose.test.yml wait`
-- **Complete Isolation**: Separate test ports (19092, 5433, 6380)
+- **Health-Gated Startup**: `docker compose -f docker-compose.yml wait`
+- **Standard Dev Ports**: Uses Redis 6379, Redpanda 9092, PostgreSQL 5432
 - **Example Patterns**: See `examples/testing/` for implementation patterns
 
 ## Configuration
@@ -251,7 +251,7 @@ ACTIVE_BROKERS=paper python cli.py run
 ### Trading Engine Segregation Rules (CRITICAL ENHANCEMENT)
 7. **NEVER mix trading modes** - Paper and zerodha trading data must be completely separate
 8. **Topic segregation by mode** - Use separate topics for paper vs zerodha (e.g., orders.filled.paper vs orders.filled.zerodha)
-9. **Source identification** - Always include trading_mode field in event data
+9. **Source identification** - Always include execution_mode field in event data
 10. **Configuration-driven routing** - Use database configuration to determine zerodha trading eligibility per strategy
 11. **Safety defaults** - All signals go to paper trading by default, zerodha trading is explicit opt-in
 12. **Separate trader classes** - PaperTrader and ZerodhaTrader must remain completely independent
@@ -303,7 +303,7 @@ ACTIVE_BROKERS=paper python cli.py run
 
 #### Service Integration Patterns
 4. **Event loop management** - Always capture the running event loop in async service `start()` methods: `self.loop = asyncio.get_running_loop()`
-5. **Schema field consistency** - Use consistent field names across schemas and services (e.g., `execution_mode` not `trading_mode`)
+5. **Schema field consistency** - Use consistent field names across schemas and services (use `execution_mode`, avoid `trading_mode`)
 6. **Topic naming consistency** - Market data always uses shared topics (`TopicNames.MARKET_TICKS`), not broker-specific topics
 7. **EventType enum usage** - Always use `EventType.ORDER_FILLED` instead of string literals like `'order_filled'`
 

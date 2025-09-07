@@ -258,6 +258,7 @@ class TestEnvironmentVariableLoading:
             'APP_NAME': 'TestApp',
             'ENVIRONMENT': 'production',
             'DEBUG': 'false',
+            'LOGGING__LEVEL': 'ERROR',
             'LOG_LEVEL': 'ERROR'
         }):
             settings = Settings(secret_key="test")

@@ -44,7 +44,33 @@ class MessageConsumer:
         
         await self._consumer.start()
         self._running = True
-        logger.info(f"Message consumer started for topics: {self.topics}")
+        logger.info(
+            "Message consumer started",
+            topics=self.topics,
+            group_id=self.group_id,
+            bootstrap=self.config.bootstrap_servers,
+        )
+
+        # Attempt to log initial partition assignment for visibility
+        try:
+            assign = self._consumer.assignment()
+            if assign:
+                parts = [f"{tp.topic}[p{tp.partition}]" for tp in assign]
+                logger.info(
+                    "Consumer partition assignment established",
+                    group_id=self.group_id,
+                    assignment=parts,
+                )
+            else:
+                logger.info(
+                    "Consumer partition assignment pending",
+                    group_id=self.group_id,
+                )
+            # One-shot delayed check to capture final assignment after rebalance
+            asyncio.create_task(self._log_assignment_after_delay(1.0))
+        except Exception:
+            # Non-fatal: assignment may not be available immediately
+            pass
     
     async def stop(self) -> None:
         """Stop the Kafka consumer."""
@@ -54,6 +80,22 @@ class MessageConsumer:
         await self._consumer.stop()
         self._running = False
         logger.info("Message consumer stopped")
+
+    async def _log_assignment_after_delay(self, delay_seconds: float = 1.0) -> None:
+        try:
+            await asyncio.sleep(delay_seconds)
+            if not self._consumer:
+                return
+            assign = self._consumer.assignment()
+            if assign:
+                parts = [f"{tp.topic}[p{tp.partition}]" for tp in assign]
+                logger.info(
+                    "Consumer partition assignment (post-rebalance)",
+                    group_id=self.group_id,
+                    assignment=parts,
+                )
+        except Exception:
+            pass
     
     async def consume(self) -> AsyncGenerator[Dict[str, Any], None]:
         """Yield raw messages from Kafka."""
@@ -73,7 +115,7 @@ class MessageConsumer:
                     '_raw_message': message  # For commit operations
                 }
         except Exception as e:
-            logger.error(f"Error in message consumption: {e}")
+            logger.error("Error in message consumption", error=str(e))
             raise
     
     async def commit(self, message: Optional[Dict[str, Any]] = None) -> None:
@@ -90,5 +132,5 @@ class MessageConsumer:
                 # Commit current position
                 await self._consumer.commit()
         except Exception as e:
-            logger.error(f"Failed to commit offset: {e}")
+            logger.error("Failed to commit offset", error=str(e))
             raise

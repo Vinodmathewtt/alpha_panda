@@ -189,7 +189,7 @@ print(f"Recommendations: {validation_result['recommendations']}")
 
 ## Usage Examples
 
-### Basic Monitoring Setup
+### Basic Monitoring Setup (Prometheus)
 ```python
 from core.monitoring.prometheus_metrics import create_metrics_collector
 from core.monitoring.metrics_registry import MetricsRegistry
@@ -204,6 +204,30 @@ broker_signals_key = MetricsRegistry.signals_last("paper")
 # Record events with proper metrics
 metrics.record_market_tick("zerodha")
 metrics.record_signal_generated("momentum_strategy", "paper", "BUY")
+```
+
+### Pipeline Metrics Collector (Redis keys)
+The `PipelineMetricsCollector` requires an explicit `broker_context` for every method call; there is no default namespace. Keys follow `pipeline:{stage}:{broker}:{last|count}`.
+
+```
+from core.monitoring.pipeline_metrics import PipelineMetricsCollector
+
+collector = PipelineMetricsCollector(redis_client, settings)
+
+# Shared market data
+await collector.record_market_tick(tick, broker_context="shared")
+
+# Broker-specific flow
+await collector.record_signal_generated(signal, broker_context="paper")
+await collector.record_signal_validated(signal, passed=True, broker_context="zerodha")
+await collector.record_order_processed(order, broker_context="paper")
+await collector.record_portfolio_update("paper:strategyA", update, broker_context="paper")
+
+# Health for a broker
+health = await collector.get_pipeline_health("zerodha")
+
+# Reset metrics for a broker
+await collector.reset_metrics("paper")
 ```
 
 ### Health Monitoring Integration
@@ -276,7 +300,8 @@ await alert_manager.send_alert(
     severity=AlertSeverity.CRITICAL,
     category=AlertCategory.SYSTEM,
     component="trading_engine",
-    broker_namespace="zerodha"
+    # Deprecated example updated: prefer explicit broker context per call
+    # Use PipelineMetricsCollector(...).get_pipeline_health("zerodha") instead
 )
 ```
 

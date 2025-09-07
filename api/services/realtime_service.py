@@ -2,9 +2,9 @@ import asyncio
 import json
 from typing import List, Set
 from fastapi import WebSocket, WebSocketDisconnect
-import structlog
+from core.logging import get_api_logger_safe
 
-logger = structlog.get_logger()
+logger = get_api_logger_safe("api.realtime_service")
 
 class ConnectionManager:
     """Manages WebSocket connections for real-time updates"""

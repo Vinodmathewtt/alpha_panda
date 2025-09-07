@@ -43,11 +43,11 @@ async def seed_composition_strategies():
         # Create composition-based strategies
         momentum_strategy = StrategyConfiguration(
             id="momentum_composition_1",
-            strategy_type="MomentumProcessor",  # Composition type
+            strategy_type="momentum",  # Composition type (rules-based)
             instruments=[738561, 2714625],  # RELIANCE, HDFCBANK tokens
             parameters={
                 "lookback_periods": 20,  # Migrated parameter name
-                "momentum_threshold": "0.02",
+                "threshold": 0.02,
                 "position_size": 100
             },
             is_active=True,
@@ -58,11 +58,11 @@ async def seed_composition_strategies():
         
         mean_reversion_strategy = StrategyConfiguration(
             id="mean_reversion_composition_1", 
-            strategy_type="MeanReversionProcessor",  # Composition type
+            strategy_type="mean_reversion",  # Composition type (rules-based)
             instruments=[177665, 60417],  # ICICIBANK, SBIN tokens
             parameters={
                 "lookback_periods": 20,  # Migrated parameter name
-                "std_deviation_threshold": "2.0",  # Migrated parameter name
+                "std_deviation_threshold": 2.0,  # Migrated parameter name
                 "position_size": 50
             },
             is_active=True,

@@ -1,10 +1,10 @@
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-import structlog
+from core.logging import get_api_logger_safe
 from datetime import datetime
 
-logger = structlog.get_logger()
+logger = get_api_logger_safe("api.middleware.error_handling")
 
 class ErrorHandlingMiddleware(BaseHTTPMiddleware):
     """Global error handling middleware"""

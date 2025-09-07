@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Test script for enhanced monitoring system
+Ad-hoc script for enhanced monitoring system checks.
 """
 
 import asyncio
 import sys
 import os
+from pathlib import Path
 
-# Add the parent directory to Python path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the project root to Python path
+project_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(project_root))
 
 from core.config.settings import Settings
 from core.logging import configure_logging, get_trading_logger_safe, get_monitoring_logger_safe
@@ -54,11 +56,11 @@ async def test_enhanced_monitoring():
             "symbol": "TEST",
             "last_price": 100.50
         }
-        await metrics_collector.record_market_tick(sample_tick)
+        await metrics_collector.record_market_tick(sample_tick, broker_ctx)
         print("✅ Pipeline metrics collector working")
         
         # Test pipeline health status
-        health_status = await metrics_collector.get_pipeline_health()
+        health_status = await metrics_collector.get_pipeline_health(broker_ctx)
         print(f"✅ Pipeline health check completed - Overall healthy: {health_status['overall_healthy']}")
         
         # Test pipeline monitor initialization
@@ -78,10 +80,9 @@ async def test_enhanced_monitoring():
             print(f"⚠️  Health checker test skipped: {e}")
         
         # Clean up test data
-        await metrics_collector.reset_metrics()
+        await metrics_collector.reset_metrics(broker_ctx)
         print("✅ Test cleanup completed")
         
-        # FIX: Use aclose() for consistent async Redis client closure (redis-py 5.x preferred method)
         await redis_client.aclose()
         print("\n🎉 All monitoring tests passed successfully!")
         print("\nMonitoring system features verified:")

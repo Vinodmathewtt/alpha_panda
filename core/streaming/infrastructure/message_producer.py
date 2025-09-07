@@ -129,6 +129,17 @@ class MessageProducer:
                         f"event_type is required for non-market topics (service={self.service_name}, topic={topic}, key={key})"
                     )
             
+            # Propagate trace fields if provided in data (best-effort)
+            trace_id = None
+            parent_trace_id = None
+            try:
+                if isinstance(data, dict):
+                    trace_id = data.get('trace_id')
+                    parent_trace_id = data.get('parent_trace_id')
+            except Exception:
+                trace_id = None
+                parent_trace_id = None
+
             envelope = EventEnvelope(
                 id=event_id,
                 type=envelope_type,
@@ -137,7 +148,9 @@ class MessageProducer:
                 key=key,
                 correlation_id=correlation_id or generate_event_id(),
                 broker=broker,
-                data=data
+                data=data,
+                trace_id=trace_id or generate_event_id(),
+                parent_trace_id=parent_trace_id
             ).model_dump(mode='json')
         else:
             envelope = data

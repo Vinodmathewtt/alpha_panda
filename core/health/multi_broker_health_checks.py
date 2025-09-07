@@ -68,19 +68,42 @@ class BrokerTopicHealthCheck(MultiBrokerHealthCheck):
         missing_topics = await self._check_topics_exist(required_topics)
         
         if missing_topics:
+            # Optional auto-bootstrap in non-production environments
+            env = str(self.settings.environment).lower()
+            auto_bootstrap = os.getenv("AUTO_BOOTSTRAP_TOPICS_ON_STARTUP", "true").lower() in ("1", "true", "yes")
+            if env.endswith("production") or not auto_bootstrap:
+                return HealthCheckResult(
+                    component=f"broker_topics_{broker}",
+                    passed=False,
+                    message=f"Missing topics for {broker}: {', '.join(missing_topics)}",
+                    details={
+                        "remediation": "Run topic bootstrap with overlays",
+                        "command": "make bootstrap",
+                        "env_overlays": {
+                            "SETTINGS__ENVIRONMENT": env.split('.')[-1],
+                            "REDPANDA_BROKER_COUNT": os.getenv("REDPANDA_BROKER_COUNT", "<brokers>"),
+                            "TOPIC_PARTITIONS_MULTIPLIER": os.getenv("TOPIC_PARTITIONS_MULTIPLIER", "1.0"),
+                            "CREATE_DLQ_FOR_ALL": os.getenv("CREATE_DLQ_FOR_ALL", "true"),
+                        },
+                    },
+                )
+            # Try bootstrap
+            created, err = await self._auto_create_topics(missing_topics, broker)
+            if created:
+                return HealthCheckResult(
+                    component=f"broker_topics_{broker}",
+                    passed=True,
+                    message=f"Auto-created missing topics ({len(created)}) for {broker} (dev)",
+                    details={"created": created},
+                )
+            # Failed to bootstrap
             return HealthCheckResult(
                 component=f"broker_topics_{broker}",
                 passed=False,
-                message=f"Missing topics for {broker}: {', '.join(missing_topics)}",
+                message=f"Missing topics for {broker}: {', '.join(missing_topics)}; auto-bootstrap failed",
                 details={
-                    "remediation": "Run topic bootstrap with overlays",
-                    "command": "make bootstrap",
-                    "env_overlays": {
-                        "SETTINGS__ENVIRONMENT": str(self.settings.environment).split('.')[-1],
-                        "REDPANDA_BROKER_COUNT": os.getenv("REDPANDA_BROKER_COUNT", "<brokers>"),
-                        "TOPIC_PARTITIONS_MULTIPLIER": os.getenv("TOPIC_PARTITIONS_MULTIPLIER", "1.0"),
-                        "CREATE_DLQ_FOR_ALL": os.getenv("CREATE_DLQ_FOR_ALL", "true"),
-                    },
+                    "error": err,
+                    "remediation": "Run topic bootstrap: make bootstrap",
                 },
             )
 
@@ -88,11 +111,16 @@ class BrokerTopicHealthCheck(MultiBrokerHealthCheck):
         expectations = self._compute_expectations(required_topics, TopicConfig.CONFIGS)
         capacity_issues = await self._check_topic_capacity(required_topics, expectations)
         if capacity_issues:
+            env = str(self.settings.environment).lower()
             msgs = [f"{t}: {reason}" for t, reason in capacity_issues.items()]
+            dev_warn = not env.endswith("production")
             return HealthCheckResult(
                 component=f"broker_topics_{broker}",
-                passed=False,
-                message=f"Topic capacity below expectations for {broker}: {'; '.join(msgs)}",
+                passed=False if not dev_warn else True,
+                message=(
+                    f"Topic capacity below expectations for {broker}: {'; '.join(msgs)}"
+                    + (" (dev warn)" if dev_warn else "")
+                ),
                 details={
                     "issues": capacity_issues,
                     "expected": expectations,
@@ -202,6 +230,41 @@ class BrokerTopicHealthCheck(MultiBrokerHealthCheck):
             except Exception:
                 pass
         return issues
+
+    async def _auto_create_topics(self, topics: List[str], broker: str) -> tuple[List[str] | None, str | None]:
+        """Attempt to create missing topics using expectations and sane defaults.
+
+        Returns (created_topics, error_message)
+        """
+        from aiokafka.admin import AIOKafkaAdminClient, NewTopic
+        bootstrap = self.settings.redpanda.bootstrap_servers
+        created: List[str] = []
+        admin = AIOKafkaAdminClient(
+            bootstrap_servers=bootstrap,
+            client_id="alpha-panda-bootstrap-admin",
+        )
+        try:
+            await admin.start()
+            # Use expectations as a guide for partitions/RF
+            from core.schemas.topics import TopicConfig
+            expectations = self._compute_expectations(topics, TopicConfig.CONFIGS)
+            new_topics = []
+            for t in topics:
+                exp = expectations.get(t, {"partitions": 1, "replication_factor": 1})
+                parts = max(1, int(exp.get("partitions", 1)))
+                rf = max(1, int(exp.get("replication_factor", 1)))
+                new_topics.append(NewTopic(name=t, num_partitions=parts, replication_factor=rf))
+            # Best-effort create
+            await admin.create_topics(new_topics=new_topics, validate_only=False)
+            created = topics
+            return created, None
+        except Exception as e:
+            return None, str(e)
+        finally:
+            try:
+                await admin.close()
+            except Exception:
+                pass
 
 class BrokerStateHealthCheck(MultiBrokerHealthCheck):
     """Check broker-specific state and configuration."""

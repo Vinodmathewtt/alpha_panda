@@ -22,8 +22,28 @@
 - Panels and alerts: see Grafana JSON in `docs/observability/grafana/` and Prometheus rules in `docs/observability/prometheus/`.
 
 ## Notes
-- Execution is simulated: validated signals are converted to immediate fills.
+- Execution is simulated: validated signals are converted to fills.
 - Extend components under `components/` to introduce adapters and richer portfolio logic if required.
+
+## Execution Simulation (Phase 1 Improvements)
+- Slippage: configurable via `Settings.paper_trading.slippage_percent` (percent of price). BUY pays up, SELL receives less.
+- Commission: configurable via `Settings.paper_trading.commission_percent` (percent of notional). Included in `OrderFilled.fees`.
+- Latency: optional latency simulation using Gaussian(ms) with `Settings.paper_trading.latency_ms_mean` and `latency_ms_std`.
+- Determinism: RNG seed based on `(strategy_id, instrument_token, timestamp)` ensures reproducible outcomes.
+
+## Execution Simulation (Phase 2 Improvements)
+- Partial fills: controlled by `Settings.paper_trading.partial_fill_prob` and `max_partials`; emits multiple `order_filled` events with same `order_id`.
+- Order types: `metadata.order_type = market|limit`; for limit, `metadata.limit_price` is honored (side-aware crossing).
+- Time-in-force: `metadata.tif = IOC|FOK|DAY`.
+  - IOC: may partially fill immediately, cancel remainder (simulated).
+  - FOK: fills only if fully fillable; otherwise emits `order_failed`.
+- Idempotence: per-signal idempotency to avoid duplicate fills on retries.
+
+## Portfolio & Risk (Phase 3)
+- Positions: per strategy+instrument quantity and average price maintained in memory.
+- PnL: unrealized PnL computed from last price and average price; realized PnL updated on SELL fills.
+- Cash: per strategy cash balance from `Settings.paper_trading.starting_cash`; BUY reduces cash, SELL increases cash (fees applied on both).
+- Constraints: no shorting (SELL limited to held quantity); insufficient cash results in `order_failed` (FOK rejects; IOC may partially fill).
 
 ## Design Notes & Future Enhancements
 
@@ -105,13 +125,14 @@ Output: Order filled envelope on `paper.orders.filled`
     "order_id": "ord-...",
     "instrument_token": 12345,
     "quantity": 10,
-    "fill_price": 100.5,
+    "fill_price": 100.55,
     "timestamp": "2025-08-31T12:34:56Z",
     "broker": "paper",
     "side": "BUY",
     "strategy_id": "strategyA",
     "signal_type": "BUY",
-    "execution_mode": "paper"
+    "execution_mode": "paper",
+    "fees": 0.1
   }
 }
 ```

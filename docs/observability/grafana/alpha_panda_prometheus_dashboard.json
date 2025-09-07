@@ -38,11 +38,19 @@
     },
     {
       "type": "graph",
+      "title": "Validator Warnings by Stage",
+      "targets": [
+        {"expr": "sum(rate(validator_warnings_total[5m])) by (stage, broker, issue)", "legendFormat": "{{stage}} {{broker}} {{issue}}"}
+      ],
+      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 8}
+    },
+    {
+      "type": "graph",
       "title": "Market Ticks",
       "targets": [
         {"expr": "sum(rate(market_ticks_received_total[1m])) by (source)", "legendFormat": "{{source}}"}
       ],
-      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 8}
+      "gridPos": {"x": 0, "y": 24, "w": 24, "h": 8}
     },
     {
       "type": "graph",

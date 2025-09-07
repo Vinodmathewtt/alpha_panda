@@ -1,0 +1,16 @@
+brokers:
+- paper
+enabled: true
+instrument_tokens:
+- 256265
+- 2714625
+module_name: strategies.implementations.ml_mean_reversion
+parameters:
+  model_path: models/sample_momentum_v1.joblib
+  lookback_periods: 20
+  position_size: 100
+  confidence_threshold: 0.6
+  expected_feature_count: 4
+strategy_class: MLMeanReversionProcessor
+strategy_name: ML_MeanReversion_Sample_1
+use_composition: true

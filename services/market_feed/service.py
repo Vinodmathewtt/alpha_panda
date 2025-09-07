@@ -54,7 +54,8 @@ class MarketFeedService:
         self.ticks_received = 0
         self.last_tick_time = None
         # Market feed uses shared namespace since it serves all brokers
-        self.metrics_collector = PipelineMetricsCollector(redis_client, settings, "market")
+        # Collector now requires broker_context per call; no default namespace
+        self.metrics_collector = PipelineMetricsCollector(redis_client, settings)
         self.prom_metrics: PrometheusMetricsCollector | None = prometheus_metrics
         
         # Instrument subscription list
@@ -265,7 +266,9 @@ class MarketFeedService:
 
     async def _update_metrics(self, tick: MarketTick):
         try:
-            await self.metrics_collector.record_market_tick(tick.model_dump(mode='json'))
+            await self.metrics_collector.record_market_tick(
+                tick.model_dump(mode='json'), broker_context="shared"
+            )
         except Exception as e:
             self.error_logger.error(f"Failed to update metrics in Redis: {e}", extra={"tick": tick.instrument_token})
             self._failed_metrics += 1

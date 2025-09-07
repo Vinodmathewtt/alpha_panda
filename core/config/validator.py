@@ -30,7 +30,7 @@ except ImportError:
     create_async_engine = None
     text = None
 
-from .settings import Settings
+from .settings import Settings, Environment
 
 logger = logging.getLogger(__name__)
 
@@ -170,11 +170,17 @@ class ConfigurationValidator:
             ))
             
         except Exception as e:
+            # In non-production, relax to a warning so preflight health checks
+            # can run and emit a comprehensive infra summary.
+            is_prod = getattr(self.settings, "environment", Environment.DEVELOPMENT) == Environment.PRODUCTION
             self.validation_results.append(ValidationResult(
                 is_valid=False,
                 component="Database",
-                message=f"Cannot connect to database: {e}",
-                severity="error"
+                message=(
+                    f"Cannot connect to database: {e}"
+                    + (" (dev warn: infra likely down; run 'make up' or 'docker compose up -d')" if not is_prod else "")
+                ),
+                severity="error" if is_prod else "warning"
             ))
     
     async def _validate_redis_connection(self):
@@ -205,11 +211,17 @@ class ConfigurationValidator:
             ))
             
         except Exception as e:
+            # In non-production, relax to a warning so preflight health checks
+            # can run and emit a comprehensive infra summary.
+            is_prod = getattr(self.settings, "environment", Environment.DEVELOPMENT) == Environment.PRODUCTION
             self.validation_results.append(ValidationResult(
                 is_valid=False,
                 component="Redis",
-                message=f"Cannot connect to Redis: {e}",
-                severity="error"
+                message=(
+                    f"Cannot connect to Redis: {e}"
+                    + (" (dev warn: infra likely down; run 'make up' or 'docker compose up -d')" if not is_prod else "")
+                ),
+                severity="error" if is_prod else "warning"
             ))
     
     def _validate_broker_settings(self):

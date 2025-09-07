@@ -23,9 +23,9 @@ docker compose --profile console up -d
 
 ### Test Environment Management
 ```bash
-docker compose -f docker-compose.test.yml up -d    # Start test environment
-docker compose -f docker-compose.test.yml down     # Stop test environment
-docker compose -f docker-compose.test.yml down -v  # Stop and remove test volumes
+docker compose -f docker-compose.yml up -d    # Start environment
+docker compose -f docker-compose.yml down     # Stop environment
+docker compose -f docker-compose.yml down -v  # Stop and remove volumes
 ```
 
 ### Development Tools
@@ -86,6 +86,13 @@ python cli.py seed              # Seed data manually
 - Zerodha integration via `BrokerAuthenticator` and KiteConnect
 - Service publishes standardized events to `market.ticks` topic regardless of data source
 - Production deployment uses real Zerodha data, development uses mock data
+
+### Broker Context Boundary (Important)
+- Market data is a single shared stream on `market.ticks` for the entire application. Do not attach a per‑broker context to market tick logs, envelopes, or pipeline metrics.
+- For envelopes, set `broker="shared"` when emitting `market.ticks`. This prevents duplication and keeps the feed unified.
+- For pipeline metrics, always pass `broker_context="shared"` for market tick updates. Normalized keys should follow `pipeline:market_ticks:shared:{last|count}` (legacy aliases may exist during transition).
+- Brokerization starts at strategy signal generation. The Strategy Runner emits `{broker}.signals.raw`, and all downstream services (risk manager, trading engines, portfolios) use strictly broker‑scoped topics and metrics.
+- Keep market feed channel logs unbrokered (no `broker` field); add broker context only after signals are generated.
 
 ## Terminology Rules
 

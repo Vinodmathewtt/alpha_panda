@@ -7,15 +7,14 @@ The scripts directory contains operational scripts, database migrations, testing
 ## Script Categories
 
 ### Infrastructure Bootstrap Scripts
-- **`bootstrap_topics.py`** - Creates Kafka topics for production deployment
-- **`bootstrap_test_topics.py`** - Creates Kafka topics for test environments with specific configurations
+- **`bootstrap_topics.py`** - Creates Kafka topics (env-aware overlays for dev/test/prod)
 - **`test-infrastructure.sh`** - Comprehensive infrastructure testing and validation script
 
 ### Database Management Scripts
 - **`create_instrument_tables.py`** - Creates database tables for financial instruments
 - **`create_portfolio_tables.py`** - Creates database tables for portfolio management
 - **`create_migration.py`** - Generates new Alembic migration files
-- **`init_test_db.sql`** - Initializes test database with required schemas and data
+ 
 
 ### Migration and Strategy Scripts
 - **`migrate_live_to_zerodha.py`** - Migrates live trading configuration to Zerodha broker
@@ -26,10 +25,11 @@ The scripts directory contains operational scripts, database migrations, testing
 - **`seed_test_data.py`** - Comprehensive test data seeding for development and testing
 
 ### Testing and Integration Scripts
-- **`test_enhanced_market_data_capture.py`** - Tests market data capture functionality
-- **`test_instrument_integration.py`** - Tests instrument data integration
-- **`test_market_feed_integration.py`** - Tests market feed integration and data flow
-- **`test_monitoring.py`** - Tests monitoring and alerting systems
+- Moved ad-hoc helpers to `tests/integration/tools/`:
+  - `tool_enhanced_market_data_capture.py` – Market data capture checks
+  - `tool_instrument_integration.py` – Instrument data integration checks
+  - `tool_market_feed_integration.py` – Market feed integration checks
+  - `tool_monitoring.py` – Monitoring and alerting checks
 
 ### Validation and Quality Assurance Scripts
 - **`validate_composition_migration.py`** - Validates composition pattern migration integrity
@@ -46,7 +46,7 @@ The scripts directory contains operational scripts, database migrations, testing
 ### Development Setup
 ```bash
 # Bootstrap development environment
-python scripts/bootstrap_test_topics.py
+python scripts/bootstrap_topics.py
 python scripts/seed_test_data.py
 python scripts/create_instrument_tables.py
 ```
@@ -56,9 +56,9 @@ python scripts/create_instrument_tables.py
 # Run comprehensive infrastructure tests
 ./scripts/test-infrastructure.sh
 
-# Test specific integrations
-python scripts/test_market_feed_integration.py
-python scripts/test_instrument_integration.py
+# Ad-hoc integration checks
+python tests/integration/tools/tool_market_feed_integration.py
+python tests/integration/tools/tool_instrument_integration.py
 ```
 
 ### Database Operations

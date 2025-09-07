@@ -6,9 +6,9 @@ import csv
 import os
 from pathlib import Path
 from typing import List, Dict, Iterator, Optional, Any
-import structlog
+from core.logging import get_market_data_logger_safe
 
-logger = structlog.get_logger(__name__)
+logger = get_market_data_logger_safe("services.instrument_data.csv_loader")
 
 
 class InstrumentCSVLoader:
@@ -63,7 +63,7 @@ class InstrumentCSVLoader:
                         lines.append(line)
                 
                 if not lines:
-                    logger.warning(f"No data found in CSV file: {self.csv_file_path}")
+                    logger.warning("No data found in CSV file", path=str(self.csv_file_path))
                     return []
                 
                 # Check if first non-comment line looks like a header
@@ -89,14 +89,14 @@ class InstrumentCSVLoader:
                         instruments.append(cleaned_row)
                         
                     except Exception as e:
-                        logger.error(f"Error processing CSV row {row_num}", error=str(e))
+                        logger.error("Error processing CSV row", row=row_num, error=str(e))
                         continue
                 
-                logger.info(f"Successfully loaded {len(instruments)} instruments from {self.csv_file_path}")
+                logger.info("Successfully loaded instruments", count=len(instruments), path=str(self.csv_file_path))
                 return instruments
                 
         except Exception as e:
-            logger.error(f"Failed to load CSV file {self.csv_file_path}", error=str(e))
+            logger.error("Failed to load CSV file", path=str(self.csv_file_path), error=str(e))
             raise
     
     def load_instruments_iterator(self) -> Iterator[Dict[str, Any]]:
@@ -116,7 +116,7 @@ class InstrumentCSVLoader:
                         lines.append(line)
                 
                 if not lines:
-                    logger.warning(f"No data found in CSV file: {self.csv_file_path}")
+                    logger.warning("No data found in CSV file", path=str(self.csv_file_path))
                     return
                 
                 # Check if first non-comment line looks like a header
@@ -136,11 +136,11 @@ class InstrumentCSVLoader:
                         if self._validate_row(row, row_num):
                             yield self._clean_row(row)
                     except Exception as e:
-                        logger.error(f"Error processing CSV row {row_num}", error=str(e))
+                        logger.error("Error processing CSV row", row=row_num, error=str(e))
                         continue
                         
         except Exception as e:
-            logger.error(f"Failed to iterate CSV file {self.csv_file_path}", error=str(e))
+            logger.error("Failed to iterate CSV file", path=str(self.csv_file_path), error=str(e))
             raise
     
     def _validate_row(self, row: Dict[str, str], row_num: int) -> bool:
@@ -158,14 +158,14 @@ class InstrumentCSVLoader:
         
         for field in required_fields:
             if field not in row or not row[field].strip():
-                logger.warning(f"Row {row_num}: Missing or empty required field '{field}'")
+                logger.warning("CSV row invalid: missing field", row=row_num, field=field)
                 return False
         
         # Validate instrument_token is numeric
         try:
             int(row['instrument_token'].strip())
         except ValueError:
-            logger.warning(f"Row {row_num}: Invalid instrument_token '{row['instrument_token']}'")
+            logger.warning("CSV row invalid: instrument_token not int", row=row_num, instrument_token=row.get('instrument_token'))
             return False
         
         return True
@@ -231,7 +231,7 @@ class InstrumentCSVLoader:
             for _ in self.load_instruments_iterator():
                 count += 1
         except Exception as e:
-            logger.error(f"Error counting instruments", error=str(e))
+            logger.error("Error counting instruments", error=str(e))
             
         return count
     

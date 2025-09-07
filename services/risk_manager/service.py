@@ -77,6 +77,12 @@ class RiskManagerService:
         
         await self.orchestrator.start()
         self.logger.info(f"🛡️ Risk Manager started for brokers: {self.settings.active_brokers}")
+        # Per-broker context logs for clarity in multi-broker dashboards
+        try:
+            for _b in self.settings.active_brokers:
+                self.logger.bind(broker=_b).info("Risk Manager started", broker=_b)
+        except Exception:
+            pass
         if self.prom_metrics:
             try:
                 for broker in self.settings.active_brokers:
@@ -94,6 +100,11 @@ class RiskManagerService:
         await self.orchestrator.stop()
         await self.state_manager.close()
         self.logger.info(f"🛡️ Risk Manager stopped for brokers: {self.settings.active_brokers}")
+        try:
+            for _b in self.settings.active_brokers:
+                self.logger.bind(broker=_b).info("Risk Manager stopped", broker=_b)
+        except Exception:
+            pass
         if self.prom_metrics:
             try:
                 for broker in self.settings.active_brokers:
@@ -128,7 +139,13 @@ class RiskManagerService:
         # Extract key based on message type
         if self._is_event_type(message, EventType.TRADING_SIGNAL):
             data = message.get('data', {})
-            key = f"{data.get('strategy_id', '')}:{data.get('instrument_token', '')}"
+            from core.schemas.topics import PartitioningKeys
+            try:
+                key = PartitioningKeys.trading_signal_key(
+                    data.get('strategy_id', ''), data.get('instrument_token', '')
+                )
+            except Exception:
+                key = f"{data.get('strategy_id', '')}:{data.get('instrument_token', '')}"
             with tracer.start_as_current_span("risk.validate_signal") as span:
                 try:
                     span.set_attribute("broker", broker)

@@ -1,0 +1,121 @@
+{
+  "timestamp": "2025-09-07T15:11:20.031273Z",
+  "environment": "development",
+  "overall_healthy": true,
+  "checks": [
+    {
+      "component": "Zerodha Authentication",
+      "passed": true,
+      "message": "Zerodha authentication is active and valid for user: HSU975",
+      "duration_ms": 0.029724000341957435,
+      "details": null
+    },
+    {
+      "component": "infrastructure",
+      "passed": true,
+      "message": "Infrastructure OK (Postgres/Redis/Redpanda)",
+      "duration_ms": 1263.0806229990412,
+      "details": {
+        "postgres": {
+          "ok": true,
+          "error": null
+        },
+        "redis": {
+          "ok": true,
+          "error": null
+        },
+        "redpanda": {
+          "ok": true,
+          "error": null
+        },
+        "remediation": []
+      }
+    },
+    {
+      "component": "PostgreSQL",
+      "passed": true,
+      "message": "Connection successful.",
+      "duration_ms": 1256.8317619989102,
+      "details": null
+    },
+    {
+      "component": "Redis",
+      "passed": true,
+      "message": "Connection successful.",
+      "duration_ms": 27.355727999747614,
+      "details": null
+    },
+    {
+      "component": "Redpanda",
+      "passed": true,
+      "message": "Connection successful.",
+      "duration_ms": 170.62303100101417,
+      "details": null
+    },
+    {
+      "component": "broker_topics",
+      "passed": true,
+      "message": "All broker checks passed: ['broker_topics_paper', 'broker_topics_zerodha']",
+      "duration_ms": 1274.129293000442,
+      "details": null
+    },
+    {
+      "component": "Strategy Config",
+      "passed": true,
+      "message": "Found 3 active strategies.",
+      "duration_ms": 1256.07259500066,
+      "details": null
+    },
+    {
+      "component": "ML Models",
+      "passed": true,
+      "message": "All ML model artifacts present (3 scanned)",
+      "duration_ms": 1257.6911719988857,
+      "details": null
+    },
+    {
+      "component": "ML Feature Compatibility",
+      "passed": true,
+      "message": "Scanned 3 ML strategies; 2 mismatches (dev warn)",
+      "duration_ms": 1253.6761150004168,
+      "details": {
+        "strategies": {
+          "ML_Breakout_Sample_1": {
+            "expected_features": 5,
+            "observed_features": 4,
+            "strategy_type": "MLBreakoutProcessor",
+            "status": "mismatch"
+          },
+          "ML_MeanReversion_Sample_1": {
+            "expected_features": 5,
+            "observed_features": 4,
+            "strategy_type": "MLMeanReversionProcessor",
+            "status": "mismatch"
+          },
+          "ML_Momentum_Sample_1": {
+            "expected_features": 5,
+            "observed_features": 5,
+            "strategy_type": "MLMomentumProcessor",
+            "status": "ok"
+          }
+        }
+      },
+      "status": "warning"
+    },
+    {
+      "component": "Zerodha API",
+      "passed": true,
+      "message": "Successfully connected to broker API for user: Vinod.",
+      "duration_ms": 0.021383000785135664,
+      "details": null
+    },
+    {
+      "component": "Market Hours",
+      "passed": true,
+      "message": "Market is closed (weekend) - warning only",
+      "duration_ms": 13.928247000876581,
+      "details": null
+    }
+  ],
+  "policy": "warn_dev"
+}

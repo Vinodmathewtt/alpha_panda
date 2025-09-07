@@ -442,6 +442,7 @@ Essential environment variables for production:
 ```bash
 # Application Core
 ENVIRONMENT=production
+LOGGING__LEVEL=info
 LOG_LEVEL=info
 APP_NAME=AlphaPT
 

@@ -15,10 +15,13 @@ from core.health import (
 )
 from core.health.multi_broker_health_checks import BrokerTopicHealthCheck
 # Import the new custom checks
-from app.pre_trading_checks import (
+from app.pre_flight_checks import (
     ActiveStrategiesCheck,
     BrokerApiHealthCheck,
     MarketHoursCheck,
+    InfrastructureAvailabilityCheck,
+    MLModelsPreflightCheck,
+    MLFeatureCompatibilityCheck,
 )
 from services.market_feed.service import MarketFeedService
 from services.strategy_runner.service import StrategyRunnerService  
@@ -160,17 +163,22 @@ class AppContainer(containers.DeclarativeContainer):
     redis_health_check = providers.Singleton(RedisHealthCheck, redis_client=redis_client)
     redpanda_health_check = providers.Singleton(RedpandaHealthCheck, settings=settings)
     broker_topics_check = providers.Singleton(BrokerTopicHealthCheck, settings=settings)
+    infra_availability_check = providers.Singleton(InfrastructureAvailabilityCheck, db_manager=db_manager, redis_client=redis_client, settings=settings)
 
     # Configuration and Logic Checks
     zerodha_auth_check = providers.Singleton(ZerodhaAuthenticationCheck, auth_service=auth_service)
     active_strategies_check = providers.Singleton(ActiveStrategiesCheck, db_manager=db_manager)
     broker_api_check = providers.Singleton(BrokerApiHealthCheck, auth_service=auth_service)
     market_hours_check = providers.Singleton(MarketHoursCheck) # No dependencies
+    ml_models_preflight_check = providers.Singleton(MLModelsPreflightCheck, db_manager=db_manager, settings=settings)
+    ml_feature_compat_check = providers.Singleton(MLFeatureCompatibilityCheck, db_manager=db_manager, settings=settings)
 
     # Aggregate all checks into a single list - ZERODHA AUTH FIRST (CRITICAL)
     health_checks_list = providers.List(
         # CRITICAL: Zerodha authentication must be first
         zerodha_auth_check,
+        # Consolidated infra summary (in addition to individual checks)
+        infra_availability_check,
         # Infrastructure
         db_health_check,
         redis_health_check,
@@ -178,6 +186,8 @@ class AppContainer(containers.DeclarativeContainer):
         broker_topics_check,
         # Config & Logic
         active_strategies_check,
+        ml_models_preflight_check,
+        ml_feature_compat_check,
         broker_api_check,
         market_hours_check,
     )

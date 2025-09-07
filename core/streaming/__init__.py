@@ -1,53 +1,19 @@
-"""Streaming module for message processing and Kafka integration.
+"""Streaming module namespace.
 
-This module provides both the legacy StreamProcessor pattern and the new
-composition-based streaming architecture.
+This package exposes multiple submodules (clients, infrastructure, patterns,
+reliability, etc.). To avoid heavy optional dependencies at import time in
+lightweight environments (e.g., unit tests without Kafka), this __init__ does
+not eagerly import submodules.
+
+Import required components directly from subpackages, e.g.:
+  - core.streaming.patterns.stream_service_builder import StreamServiceBuilder
+  - core.streaming.error_handling import DLQPublisher
 """
 
-# Legacy pattern (for backward compatibility)
-from .clients import StreamProcessor
+# Intentionally avoid importing heavy modules (e.g., clients that depend on aiokafka)
+# to keep unit tests import-safe without Kafka dependencies installed.
 
-# New composition-based architecture
-from .infrastructure import MessageConsumer, MessageProducer
-from .reliability import (
-    ReliabilityLayer, 
-    DeduplicationManager, 
-    ErrorHandler, 
-    MetricsCollector
-)
-from .orchestration import ServiceOrchestrator, LifecycleCoordinator
-from .patterns import StreamServiceBuilder
+# Light-weight utility submodules can still be imported explicitly by callers:
+# from core.streaming import error_handling  # OK
 
-# Utility modules
-from . import correlation
-from . import deduplication
-from . import error_handling
-from . import lifecycle_manager
-
-__all__ = [
-    # Legacy
-    'StreamProcessor',
-    
-    # New architecture - Infrastructure
-    'MessageConsumer',
-    'MessageProducer',
-    
-    # New architecture - Reliability
-    'ReliabilityLayer',
-    'DeduplicationManager',
-    'ErrorHandler', 
-    'MetricsCollector',
-    
-    # New architecture - Orchestration
-    'ServiceOrchestrator',
-    'LifecycleCoordinator',
-    
-    # New architecture - Patterns
-    'StreamServiceBuilder',
-    
-    # Utility modules
-    'correlation',
-    'deduplication',
-    'error_handling',
-    'lifecycle_manager',
-]
+__all__ = []

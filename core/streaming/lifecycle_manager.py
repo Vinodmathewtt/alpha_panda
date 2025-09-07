@@ -118,26 +118,26 @@ class StreamingLifecycleManager:
         try:
             # 1. Cancel all running tasks first
             task_names = list(self.running_tasks.keys())
-            logger.debug(f"Cancelling {len(task_names)} tasks")
+            logger.debug("Cancelling tasks", count=len(task_names))
             for name in task_names:
                 await self.cancel_task(name)
             
             # 2. Stop all producers (with flush)
             producer_names = list(self.producers.keys())
-            logger.debug(f"Stopping {len(producer_names)} producers")
+            logger.debug("Stopping producers", count=len(producer_names))
             for name in producer_names:
                 await self.cleanup_producer(name)
             
             # 3. Stop all consumers
             consumer_names = list(self.consumers.keys())
-            logger.debug(f"Stopping {len(consumer_names)} consumers")
+            logger.debug("Stopping consumers", count=len(consumer_names))
             for name in consumer_names:
                 await self.cleanup_consumer(name)
             
             logger.info("Streaming components shutdown completed successfully")
             
         except Exception as e:
-            logger.error(f"Error during shutdown: {e}")
+            logger.error("Error during shutdown", error=str(e))
             raise
     
     def is_shutdown(self) -> bool:

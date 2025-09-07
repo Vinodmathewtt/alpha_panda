@@ -127,14 +127,16 @@ def create_app() -> FastAPI:
     except Exception:
         pass
 
+    # Initialize tracing if enabled (no-op when disabled or deps missing)
+    try:
+        init_tracing(container.settings(), service_name="api")
+    except Exception:
+        pass
+
     # Use DI: shared Prometheus registry from container
     app.state.prom_registry = container.prometheus_registry()
 
-    # Initialize tracing if enabled (safe no-op otherwise)
-    try:
-        init_tracing(container.settings(), service_name="alpha-panda-api")
-    except Exception:
-        pass
+    # Tracing is already initialized above for the API context; avoid duplicate init
     
     # Wire dependency injection
     container.wire(modules=[

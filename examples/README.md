@@ -53,4 +53,14 @@ These examples serve as reference implementations for the patterns described in 
 - **Graceful Degradation** - Error handling and recovery patterns
 - **Production Observability** - Health checks, metrics, and distributed tracing
 
+## Execution Mode Naming (Examples)
+
+- Use `execution_mode` (not `trading_mode`) in event payloads and code paths to identify how an order/event was executed (`paper` or `zerodha`).
+- The envelope `broker` identifies routing/audit context; `execution_mode` in payload identifies the actual execution path. Keeping both avoids ambiguity and eases future changes.
+
+Migration Guidance (for examples)
+- Producers: replace any `trading_mode` fields in payloads with `execution_mode`.
+- Consumers: if you need backward compatibility, accept both and normalize to `execution_mode`.
+- Schemas/validators: refer to the `ExecutionMode` enum in `core/schemas/events.py` to keep contracts tight.
+
 Refer to the main CLAUDE.md file for complete architectural context and implementation guidelines.

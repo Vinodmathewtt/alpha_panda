@@ -10,7 +10,7 @@ Alpha Panda follows a **security-first, health-gated startup pattern** where all
 
 - **ApplicationOrchestrator** (`main.py`) - Main application lifecycle manager
 - **AppContainer** (`containers.py`) - Dependency injection container
-- **Health Checks** (`pre_trading_checks.py`) - Pre-flight system validation
+- **Health Checks** (`pre_flight_checks.py`) - Preflight system validation
 - **Service Management** - Coordinates 7 microservices with proper shutdown handling
 
 ## 🚀 Application Startup Flow
@@ -52,8 +52,8 @@ class ApplicationOrchestrator:
         configure_logging(self.settings)
         self.logger = get_logger("alpha_panda.main")
         
-        # Log current broker namespace for deployment visibility
-        self.logger.info(f"🏢 Running in '{self.settings.broker_namespace}' broker namespace")
+        # Log active brokers for deployment visibility
+        self.logger.info(f"🏢 Active brokers: {self.settings.active_brokers}")
 ```
 
 #### 2. Health Check Execution
@@ -85,7 +85,7 @@ async def startup(self):
 The **BrokerApiHealthCheck** triggers the authentication sequence:
 
 ```python
-# app/pre_trading_checks.py:51-76
+# app/pre_flight_checks.py:51-76
 async def check(self) -> HealthCheckResult:
     if not self.auth_service.is_authenticated():
         try:
@@ -304,7 +304,8 @@ PermissionError: [Errno 1] Operation not permitted
 
 ### Health Check Debugging
 ```bash
-# Enable detailed logging
+# Enable detailed logging (enhanced logging preferred)
+export LOGGING__LEVEL=DEBUG
 export LOG_LEVEL=DEBUG
 python cli.py run
 

@@ -12,6 +12,7 @@ services:
     restart: unless-stopped
     environment:
       - ENVIRONMENT=production
+      - LOGGING__LEVEL=INFO
       - LOG_LEVEL=INFO
       - DATABASE_URL=postgresql://alphapt_user:${DATABASE_PASSWORD}@postgres:5432/alphapt_db
       - REDIS_URL=redis://redis:6379
@@ -71,6 +72,7 @@ services:
     command: ["python", "api/api_server.py"]
     environment:
       - ENVIRONMENT=production
+      - LOGGING__LEVEL=INFO
       - LOG_LEVEL=INFO
       - DATABASE_URL=postgresql://alphapt_user:${DATABASE_PASSWORD}@postgres:5432/alphapt_db
       - REDIS_URL=redis://redis:6379

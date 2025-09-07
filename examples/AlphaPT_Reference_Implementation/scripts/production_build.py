@@ -388,6 +388,9 @@ PROMETHEUS_PORT=8001
 GRAFANA_ADMIN_PASSWORD=your_secure_password
 
 # Logging Configuration
+# Preferred (enhanced logging):
+LOGGING__LEVEL=INFO
+# Fallback (basic logging):
 LOG_LEVEL=INFO
 LOG_FORMAT=json
 '''

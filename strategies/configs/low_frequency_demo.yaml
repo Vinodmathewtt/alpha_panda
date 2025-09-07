@@ -1,0 +1,15 @@
+strategy_name: Low_Frequency_Demo_1
+strategy_type: low_frequency_demo
+enabled: true
+brokers: ["paper"]  # default broker; set ["zerodha"] to route to Zerodha
+instrument_tokens: [738561]  # choose 1–3 instruments to cap daily signals
+parameters:
+  min_interval_seconds: 900         # ~1 signal every 15 minutes per instrument
+  max_daily_signals_per_instrument: 16  # optional daily cap; omit to disable
+  side: auto                        # BUY|SELL|auto (auto alternates by instrument)
+  quantity: 1
+
+# Notes:
+# - This demo strategy is designed to verify end-to-end flow by emitting
+#   a few signals daily without being too chatty.
+# - Keep instrument list small to avoid generating too many signals across symbols.

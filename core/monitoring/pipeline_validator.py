@@ -4,11 +4,20 @@ End-to-end pipeline validation and health monitoring - MULTI-BROKER VERSION
 
 import json
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 import uuid
 
 from core.logging import get_monitoring_logger_safe
+try:
+    from prometheus_client import Counter  # type: ignore
+    _VALIDATOR_WARNINGS = Counter(
+        'validator_warnings_total',
+        'Total validator warnings by stage and broker',
+        ['stage', 'broker', 'issue']
+    )
+except Exception:
+    _VALIDATOR_WARNINGS = None
 from core.market_hours.market_hours_checker import MarketHoursChecker
 from .metrics_registry import MetricsRegistry
 
@@ -22,7 +31,7 @@ class PipelineValidator:
         # FIXED: Accept broker as parameter instead of using deprecated broker_namespace
         self.broker = broker or settings.active_brokers[0]  # Default to first active broker
         self.logger = get_monitoring_logger_safe("pipeline_validator")
-        self.start_time = datetime.utcnow()  # Track service startup time
+        self.start_time = datetime.now(timezone.utc)  # Track service startup time (aware)
         
         # Market hours checker for market status awareness
         self.market_hours_checker = market_hours_checker or MarketHoursChecker()
@@ -52,7 +61,7 @@ class PipelineValidator:
         
         results = {
             "validation_id": validation_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "broker": self.broker,  # FIXED: Use broker instead of broker_namespace
             "stages": {},
             "bottlenecks": [],
@@ -147,9 +156,34 @@ class PipelineValidator:
             
         return results
 
+    # ---- Helpers: robust Redis value decoding and timestamp parsing ----
+    def _decode_bytes(self, raw: Any) -> Optional[str]:
+        if raw is None:
+            return None
+        if isinstance(raw, (bytes, bytearray)):
+            try:
+                return raw.decode()
+            except Exception:
+                return None
+        return str(raw)
+
+    def _parse_timestamp_from_json_or_iso(self, value: str) -> Optional[datetime]:
+        try:
+            data = json.loads(value)
+            if isinstance(data, dict) and isinstance(data.get("timestamp"), str):
+                dt = datetime.fromisoformat(data["timestamp"])
+                return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            pass
+        try:
+            dt = datetime.fromisoformat(value)
+            return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+
     def _in_startup_grace_period(self) -> bool:
         """Check if service is in startup grace period"""
-        uptime_seconds = (datetime.utcnow() - self.start_time).total_seconds()
+        uptime_seconds = (datetime.now(timezone.utc) - self.start_time).total_seconds()
         return uptime_seconds < self.startup_grace_period_seconds
     
     async def _validate_market_data_flow(self) -> Dict[str, Any]:
@@ -165,7 +199,11 @@ class PipelineValidator:
                 }
             # Check for recent market ticks - FIXED: Use pipeline metrics format with shared "market" namespace
             last_tick_key = MetricsRegistry.market_ticks_last()
-            last_tick_time_str = await self.redis.get(last_tick_key)
+            try:
+                last_tick_time_raw = await self.redis.get(last_tick_key)
+            except Exception as re:
+                return {"healthy": False, "issue": "redis_unavailable", "error": str(re)}
+            last_tick_time_str = self._decode_bytes(last_tick_time_raw)
             
             if not last_tick_time_str:
                 return {
@@ -176,10 +214,10 @@ class PipelineValidator:
                 }
             
             # Calculate latency - FIXED: Parse JSON structure from PipelineMetricsCollector
-            import json
-            last_tick_data = json.loads(last_tick_time_str.decode())
-            last_tick_time = datetime.fromisoformat(last_tick_data["timestamp"])
-            latency_seconds = (datetime.utcnow() - last_tick_time).total_seconds()
+            last_tick_time = self._parse_timestamp_from_json_or_iso(last_tick_time_str)
+            if not last_tick_time:
+                return {"healthy": False, "issue": "metrics_parse_error", "latency_ms": None}
+            latency_seconds = (datetime.now(timezone.utc) - last_tick_time).total_seconds()
             
             # Check if market data is stale
             is_healthy = latency_seconds <= self.thresholds["market_data_latency"]
@@ -193,15 +231,16 @@ class PipelineValidator:
             if not is_healthy:
                 result["issue"] = f"Market data latency too high: {latency_seconds:.2f}s"
                 result["recommendation"] = "Check market feed service connectivity and performance"
+                try:
+                    if _VALIDATOR_WARNINGS is not None:
+                        _VALIDATOR_WARNINGS.labels(stage="market_data", broker=self.broker, issue=result.get("issue", "latency")).inc()
+                except Exception:
+                    pass
             
             return result
             
         except Exception as e:
-            return {
-                "healthy": False,
-                "error": str(e),
-                "recommendation": "Check Redis connectivity and market data service"
-            }
+            return {"healthy": False, "issue": "validation_error", "error": str(e)}
         
     async def _validate_signal_generation(self) -> Dict[str, Any]:
         """Validate signal generation for this specific broker"""
@@ -231,8 +270,13 @@ class PipelineValidator:
             signals_key = MetricsRegistry.signals_last(self.broker)
             signal_count_key = MetricsRegistry.signals_count(self.broker)
             
-            last_signal_time_str = await self.redis.get(signals_key)
-            signal_count_str = await self.redis.get(signal_count_key)
+            try:
+                last_signal_time_raw = await self.redis.get(signals_key)
+                signal_count_raw = await self.redis.get(signal_count_key)
+            except Exception as re:
+                return {"healthy": False, "broker": self.broker, "issue": "redis_unavailable", "error": str(re)}
+            last_signal_time_str = self._decode_bytes(last_signal_time_raw)
+            signal_count_str = self._decode_bytes(signal_count_raw)
             
             result = {
                 "healthy": True,
@@ -267,12 +311,17 @@ class PipelineValidator:
                         result["healthy"] = False
                         result["issue"] = f"No signals generated for {self.broker} during market hours"
                         result["recommendation"] = f"Check strategy runner and {self.broker} broker configuration"
+                        try:
+                            if _VALIDATOR_WARNINGS is not None:
+                                _VALIDATOR_WARNINGS.labels(stage="signal_generation", broker=self.broker, issue="no_signals").inc()
+                        except Exception:
+                            pass
                 else:
                     # Check signal latency - FIXED: Handle JSON format from PipelineMetricsCollector
-                    import json
-                    last_signal_data = json.loads(last_signal_time_str.decode())
-                    last_signal_time = datetime.fromisoformat(last_signal_data["timestamp"])
-                    signal_latency = (datetime.utcnow() - last_signal_time).total_seconds()
+                    last_signal_time = self._parse_timestamp_from_json_or_iso(last_signal_time_str)
+                    if not last_signal_time:
+                        return {"healthy": False, "broker": self.broker, "issue": "metrics_parse_error"}
+                    signal_latency = (datetime.now(timezone.utc) - last_signal_time).total_seconds()
                     result["last_signal_time"] = last_signal_time.isoformat()
                     
                     if signal_latency > self.thresholds["signal_processing_latency"]:
@@ -280,17 +329,16 @@ class PipelineValidator:
                         result["latency_ms"] = signal_latency * 1000
                         result["issue"] = f"Signal generation latency too high for {self.broker}: {signal_latency:.2f}s"
                         result["recommendation"] = f"Check strategy runner performance for {self.broker}"
+                        try:
+                            if _VALIDATOR_WARNINGS is not None:
+                                _VALIDATOR_WARNINGS.labels(stage="signal_generation", broker=self.broker, issue="latency").inc()
+                        except Exception:
+                            pass
             
             return result
             
         except Exception as e:
-            return {
-                "healthy": False,
-                "broker": self.broker,
-                "issue": "redis_connectivity_error",
-                "error": str(e),
-                "recommendation": f"Check Redis connectivity and strategy runner service for {self.broker}"
-            }
+            return {"healthy": False, "broker": self.broker, "issue": "validation_error", "error": str(e)}
     
     async def _validate_risk_management(self) -> Dict[str, Any]:
         """Validate risk management for this specific broker"""
@@ -299,8 +347,13 @@ class PipelineValidator:
             risk_key = MetricsRegistry.signals_validated_last(self.broker)
             risk_count_key = MetricsRegistry.signals_validated_count(self.broker)
             
-            last_risk_time_str = await self.redis.get(risk_key)
-            risk_count_str = await self.redis.get(risk_count_key)
+            try:
+                last_risk_time_raw = await self.redis.get(risk_key)
+                risk_count_raw = await self.redis.get(risk_count_key)
+            except Exception as re:
+                return {"healthy": False, "broker": self.broker, "issue": "redis_unavailable", "error": str(re)}
+            last_risk_time_str = self._decode_bytes(last_risk_time_raw)
+            risk_count_str = self._decode_bytes(risk_count_raw)
             
             result = {
                 "healthy": True,
@@ -311,25 +364,26 @@ class PipelineValidator:
             
             # Check risk validation latency if we have recent data
             if last_risk_time_str:
-                last_risk_time = datetime.fromisoformat(last_risk_time_str.decode())
-                risk_latency = (datetime.utcnow() - last_risk_time).total_seconds()
+                last_risk_time = self._parse_timestamp_from_json_or_iso(last_risk_time_str)
+                if not last_risk_time:
+                    return {"healthy": False, "broker": self.broker, "issue": "metrics_parse_error"}
+                risk_latency = (datetime.now(timezone.utc) - last_risk_time).total_seconds()
                 
                 if risk_latency > self.thresholds["risk_validation_latency"]:
                     result["healthy"] = False
                     result["latency_ms"] = risk_latency * 1000
                     result["issue"] = f"Risk validation latency too high for {self.broker}: {risk_latency:.2f}s"
                     result["recommendation"] = f"Check risk manager service performance for {self.broker}"
+                    try:
+                        if _VALIDATOR_WARNINGS is not None:
+                            _VALIDATOR_WARNINGS.labels(stage="risk_validation", broker=self.broker, issue="latency").inc()
+                    except Exception:
+                        pass
             
             return result
             
         except Exception as e:
-            return {
-                "healthy": False,
-                "broker": self.broker,
-                "issue": "redis_connectivity_error",
-                "error": str(e),
-                "recommendation": f"Check Redis connectivity and risk manager service for {self.broker}"
-            }
+            return {"healthy": False, "broker": self.broker, "issue": "validation_error", "error": str(e)}
     
     async def _validate_order_execution(self) -> Dict[str, Any]:
         """Validate order execution for this specific broker"""
@@ -341,8 +395,13 @@ class PipelineValidator:
             execution_key = MetricsRegistry.orders_last(self.broker)
             execution_count_key = MetricsRegistry.orders_count(self.broker)
             
-            last_execution_time_str = await self.redis.get(execution_key)
-            execution_count_str = await self.redis.get(execution_count_key)
+            try:
+                last_execution_time_raw = await self.redis.get(execution_key)
+                execution_count_raw = await self.redis.get(execution_count_key)
+            except Exception as re:
+                return {"healthy": False, "broker": self.broker, "issue": "redis_unavailable", "error": str(re)}
+            last_execution_time_str = self._decode_bytes(last_execution_time_raw)
+            execution_count_str = self._decode_bytes(execution_count_raw)
             
             result = {
                 "healthy": True,
@@ -353,25 +412,26 @@ class PipelineValidator:
             
             # Check execution latency if we have recent data
             if last_execution_time_str:
-                last_execution_time = datetime.fromisoformat(last_execution_time_str.decode())
-                execution_latency = (datetime.utcnow() - last_execution_time).total_seconds()
+                last_execution_time = self._parse_timestamp_from_json_or_iso(last_execution_time_str)
+                if not last_execution_time:
+                    return {"healthy": False, "broker": self.broker, "issue": "metrics_parse_error"}
+                execution_latency = (datetime.now(timezone.utc) - last_execution_time).total_seconds()
                 
                 if execution_latency > self.thresholds["order_execution_latency"]:
                     result["healthy"] = False
                     result["latency_ms"] = execution_latency * 1000
                     result["issue"] = f"Order execution latency too high for {self.broker}: {execution_latency:.2f}s"
                     result["recommendation"] = f"Check trading engine service performance for {self.broker}"
+                    try:
+                        if _VALIDATOR_WARNINGS is not None:
+                            _VALIDATOR_WARNINGS.labels(stage="order_execution", broker=self.broker, issue="latency").inc()
+                    except Exception:
+                        pass
             
             return result
             
         except Exception as e:
-            return {
-                "healthy": False,
-                "broker": self.broker,
-                "issue": "redis_connectivity_error",
-                "error": str(e),
-                "recommendation": f"Check Redis connectivity and trading engine service for {self.broker}"
-            }
+            return {"healthy": False, "broker": self.broker, "issue": "validation_error", "error": str(e)}
     
     async def _validate_portfolio_updates(self) -> Dict[str, Any]:
         """Validate portfolio updates for this specific broker"""
@@ -383,8 +443,13 @@ class PipelineValidator:
             portfolio_key = MetricsRegistry.portfolio_updates_last(self.broker)
             portfolio_count_key = MetricsRegistry.portfolio_updates_count(self.broker)
             
-            last_update_time_str = await self.redis.get(portfolio_key)
-            update_count_str = await self.redis.get(portfolio_count_key)
+            try:
+                last_update_time_raw = await self.redis.get(portfolio_key)
+                update_count_raw = await self.redis.get(portfolio_count_key)
+            except Exception as re:
+                return {"healthy": False, "broker": self.broker, "issue": "redis_unavailable", "error": str(re)}
+            last_update_time_str = self._decode_bytes(last_update_time_raw)
+            update_count_str = self._decode_bytes(update_count_raw)
             
             result = {
                 "healthy": True,
@@ -395,25 +460,26 @@ class PipelineValidator:
             
             # Check portfolio update latency if we have recent data
             if last_update_time_str:
-                last_update_time = datetime.fromisoformat(last_update_time_str.decode())
-                portfolio_latency = (datetime.utcnow() - last_update_time).total_seconds()
+                last_update_time = self._parse_timestamp_from_json_or_iso(last_update_time_str)
+                if not last_update_time:
+                    return {"healthy": False, "broker": self.broker, "issue": "metrics_parse_error"}
+                portfolio_latency = (datetime.now(timezone.utc) - last_update_time).total_seconds()
                 
                 if portfolio_latency > self.thresholds["portfolio_update_latency"]:
                     result["healthy"] = False
                     result["latency_ms"] = portfolio_latency * 1000
                     result["issue"] = f"Portfolio update latency too high for {self.broker}: {portfolio_latency:.2f}s"
                     result["recommendation"] = f"Check portfolio manager service performance for {self.broker}"
+                    try:
+                        if _VALIDATOR_WARNINGS is not None:
+                            _VALIDATOR_WARNINGS.labels(stage="portfolio_updates", broker=self.broker, issue="latency").inc()
+                    except Exception:
+                        pass
             
             return result
             
         except Exception as e:
-            return {
-                "healthy": False,
-                "broker": self.broker,
-                "issue": "redis_connectivity_error",
-                "error": str(e),
-                "recommendation": f"Check Redis connectivity and portfolio manager service for {self.broker}"
-            }
+            return {"healthy": False, "broker": self.broker, "issue": "validation_error", "error": str(e)}
     
     def _analyze_pipeline_health(self, stages: Dict[str, Dict[str, Any]]) -> tuple:
         """Analyze overall pipeline health and identify bottlenecks"""

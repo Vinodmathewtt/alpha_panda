@@ -29,7 +29,7 @@ All event topics are prefixed by broker namespace to ensure hard segregation:
 
 **📊 Market Data Exception**: Market data uses a single shared `market.ticks` topic (single Zerodha feed) for both brokers.
 
-> Note on legacy namespacing: historical references to a single `broker_namespace` driving runtime behavior are deprecated. Routing must be derived from the topic broker prefix. The `broker_namespace` label is retained only for metrics namespacing/compatibility and should be phased out in favor of explicit `broker`/`broker_context` usage.
+> Note on legacy namespacing: historical references to a single `broker_namespace` driving runtime behavior are deprecated. Routing must be derived from the topic broker prefix. Metrics must pass an explicit `broker_context` per call; avoid any use of a global namespace.
 
 ### 3. Cache Key Isolation
 

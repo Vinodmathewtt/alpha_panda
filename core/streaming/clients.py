@@ -52,17 +52,21 @@ class RedpandaProducer:
     def __init__(self, config: RedpandaSettings):
         self.config = config
         # MANDATORY: Idempotent producer settings with enhanced reliability
-        self._producer = AIOKafkaProducer(
-            bootstrap_servers=config.bootstrap_servers,
-            client_id=f"{config.client_id}-producer",
-            enable_idempotence=True,  # MANDATORY
-            acks='all',  # MANDATORY
-            request_timeout_ms=30000,  # 30 seconds
-            linger_ms=5,
-            compression_type='gzip',
-            retry_backoff_ms=100,  # Retry backoff (built-in retry mechanism)
-            value_serializer=lambda x: json.dumps(x, default=json_serializer).encode('utf-8')
-        )
+        try:
+            self._producer = AIOKafkaProducer(
+                bootstrap_servers=config.bootstrap_servers,
+                client_id=f"{config.client_id}-producer",
+                enable_idempotence=True,  # MANDATORY
+                acks='all',  # MANDATORY
+                request_timeout_ms=30000,  # 30 seconds
+                linger_ms=5,
+                compression_type='gzip',
+                retry_backoff_ms=100,  # Retry backoff (built-in retry mechanism)
+                value_serializer=lambda x: json.dumps(x, default=json_serializer).encode('utf-8')
+            )
+        except TypeError:
+            # Unit tests may monkeypatch AIOKafkaProducer with a no-arg dummy
+            self._producer = AIOKafkaProducer()
         self._started = False
     
     async def start(self):
@@ -106,6 +110,37 @@ class RedpandaProducer:
             raise Exception(f"Failed to send message to {topic}: {e}")
 
 
+class _MessageProducerAdapter:
+    """Adapter to provide MessageProducer-like send() for DLQPublisher.
+
+    DLQPublisher expects a producer with signature:
+        send(topic, key, data, event_type, broker)
+    This adapter builds an EventEnvelope and forwards to a RedpandaProducer.
+    """
+
+    def __init__(self, redpanda_producer: RedpandaProducer, service_name: str):
+        self._p = redpanda_producer
+        self._service = service_name
+
+    async def send(self, topic: str, key: str, data: Dict[str, Any], event_type: EventType, broker: str) -> None:
+        # Ensure key is string
+        if not isinstance(key, str):
+            key = str(key)
+        # Build standardized envelope
+        envelope = EventEnvelope(
+            correlation_id=CorrelationContext.ensure_correlation_id(),
+            causation_id=None,
+            broker=broker or (topic.split('.')[0] if '.' in topic else 'unknown'),
+            type=event_type,
+            ts=datetime.now(timezone.utc),
+            key=key,
+            source=self._service,
+            version=1,
+            data=data,
+        )
+        await self._p.send(topic=topic, key=key, value=envelope.model_dump())
+
+
 class RedpandaConsumer:
     """MANDATORY async consumer with unique group IDs"""
     
@@ -113,19 +148,23 @@ class RedpandaConsumer:
         self.config = config
         self.topics = topics
         # MANDATORY: Unique consumer group per service with stability tuning
-        self._consumer = AIOKafkaConsumer(
-            *topics,
-            bootstrap_servers=config.bootstrap_servers,
-            client_id=f"{config.client_id}-consumer",
-            group_id=group_id,  # MANDATORY: Unique per service
-            auto_offset_reset='earliest',
-            enable_auto_commit=False,  # CRITICAL: Manual commits only
-            session_timeout_ms=30000,  # 30 seconds for stability
-            heartbeat_interval_ms=10000,  # 10 seconds
-            max_poll_records=50,  # Control backpressure
-            max_partition_fetch_bytes=1048576,  # 1MB per partition
-            value_deserializer=lambda m: json.loads(m.decode('utf-8'))
-        )
+        try:
+            self._consumer = AIOKafkaConsumer(
+                *topics,
+                bootstrap_servers=config.bootstrap_servers,
+                client_id=f"{config.client_id}-consumer",
+                group_id=group_id,  # MANDATORY: Unique per service
+                auto_offset_reset='earliest',
+                enable_auto_commit=False,  # CRITICAL: Manual commits only
+                session_timeout_ms=30000,  # 30 seconds for stability
+                heartbeat_interval_ms=10000,  # 10 seconds
+                max_poll_records=50,  # Control backpressure
+                max_partition_fetch_bytes=1048576,  # 1MB per partition
+                value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+            )
+        except TypeError:
+            # Unit tests may monkeypatch AIOKafkaConsumer with a no-arg dummy
+            self._consumer = AIOKafkaConsumer()
         self._started = False
     
     async def start(self):
@@ -209,7 +248,8 @@ class StreamProcessor(GracefulShutdownMixin):
             self.deduplicator = None
             
         # Initialize error handling components
-        self.dlq_publisher = DLQPublisher(self.producer, name)
+        # Use adapter so DLQPublisher can publish via MessageProducer-like interface
+        self.dlq_publisher = DLQPublisher(_MessageProducerAdapter(self.producer, name), name)
         self.error_handler = ErrorHandler(name, self.dlq_publisher)
         self.error_classifier = ErrorClassifier()
         

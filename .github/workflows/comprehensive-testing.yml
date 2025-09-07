@@ -26,6 +26,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install -r requirements-test.txt
+
+    - name: Check stdlib logging kwargs misuse
+      run: |
+        bash scripts/check_stdlib_logging_kwargs.sh
     
     - name: Run unit tests
       run: |

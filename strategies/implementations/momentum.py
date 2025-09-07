@@ -1,87 +1,113 @@
 """
-Modern momentum strategy implementation using composition
-Pure function approach - no inheritance
+Rule-based momentum strategy implementation
+Pure technical indicator approach without ML dependencies
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any, Optional
 from decimal import Decimal
-from ..core.protocols import StrategyProcessor, SignalResult
 from core.schemas.events import MarketTick as MarketData
+from strategies.core.protocols import StrategyProcessor, SignalResult
+from core.logging import get_trading_logger_safe
+
+logger = get_trading_logger_safe("momentum_strategy")
 
 
-class MomentumProcessor:
-    """Pure momentum strategy logic - no inheritance"""
+class RulesMomentumProcessor:
+    """
+    Pure rule-based momentum strategy using price change thresholds
+    No ML dependencies - uses only technical indicators
+    """
     
-    def __init__(self, momentum_threshold: Decimal, lookback_periods: int, position_size: int = 100):
-        self.momentum_threshold = momentum_threshold
-        self.lookback_periods = lookback_periods
-        self.position_size = position_size
-        self._strategy_name = "momentum"
+    def __init__(self, lookback_periods: int = 20, threshold: float = 0.01, position_size: int = 100):
+        """
+        Initialize momentum strategy with configurable parameters
+        
+        Args:
+            lookback_periods: Number of periods to calculate momentum
+            threshold: Minimum price change percentage to trigger signal
+            position_size: Base quantity for orders
+        """
+        self.lookback = lookback_periods
+        self.threshold = threshold
+        self.qty = position_size
+        
+        logger.info("Initialized rules-based momentum strategy", 
+                   lookback=self.lookback, threshold=self.threshold, position_size=self.qty)
     
     def process_tick(self, tick: MarketData, history: List[MarketData]) -> Optional[SignalResult]:
-        """Pure function - no side effects"""
-        if len(history) < self.lookback_periods:
+        """
+        Process market tick and generate momentum-based signals
+        
+        Strategy Logic:
+        1. Calculate price change over lookback period
+        2. Generate BUY signal if momentum > threshold
+        3. Generate SELL signal if momentum < -threshold
+        4. Return None for sideways movement
+        """
+        if len(history) < self.lookback:
             return None
-        
-        # Calculate momentum using pure calculations
-        current_price = tick.last_price
-        lookback_price = history[-self.lookback_periods].last_price
-        
-        if lookback_price == 0:
+            
+        try:
+            # Calculate momentum as percentage change over lookback period
+            start_price = float(history[-self.lookback].last_price)
+            current_price = float(tick.last_price)
+            
+            if start_price == 0:
+                return None
+                
+            momentum = (current_price - start_price) / start_price
+            
+            # Generate signals based on momentum thresholds
+            if momentum > self.threshold:
+                confidence = min(1.0, abs(momentum) * 5.0)  # Scale confidence with momentum strength
+                return SignalResult(
+                    signal_type="BUY",
+                    confidence=confidence,
+                    quantity=self.qty,
+                    price=Decimal(str(current_price)),
+                    reasoning=f"Positive momentum: {momentum:.2%} over {self.lookback} periods"
+                )
+            elif momentum < -self.threshold:
+                confidence = min(1.0, abs(momentum) * 5.0)
+                return SignalResult(
+                    signal_type="SELL", 
+                    confidence=confidence,
+                    quantity=self.qty,
+                    price=Decimal(str(current_price)),
+                    reasoning=f"Negative momentum: {momentum:.2%} over {self.lookback} periods"
+                )
+            
+            # No signal for sideways movement
             return None
-        
-        momentum = (current_price - lookback_price) / lookback_price
-        confidence = min(float(abs(momentum) * 100), 100.0)
-        
-        if momentum > self.momentum_threshold:
-            return SignalResult(
-                signal_type="BUY",
-                confidence=confidence,
-                quantity=self.position_size,
-                price=current_price,
-                reasoning=f"Momentum {momentum:.2%} > threshold {self.momentum_threshold:.2%}",
-                metadata={
-                    "momentum": float(momentum),
-                    "lookback_periods": self.lookback_periods,
-                    "current_price": float(current_price),
-                    "lookback_price": float(lookback_price)
-                }
-            )
-        elif momentum < -self.momentum_threshold:
-            return SignalResult(
-                signal_type="SELL", 
-                confidence=confidence,
-                quantity=self.position_size,
-                price=current_price,
-                reasoning=f"Momentum {momentum:.2%} < threshold {-self.momentum_threshold:.2%}",
-                metadata={
-                    "momentum": float(momentum),
-                    "lookback_periods": self.lookback_periods,
-                    "current_price": float(current_price),
-                    "lookback_price": float(lookback_price)
-                }
-            )
-        
-        return None
+            
+        except (ValueError, IndexError, AttributeError) as e:
+            logger.warning("Error processing momentum signal", error=str(e))
+            return None
     
     def get_required_history_length(self) -> int:
-        return self.lookback_periods
+        """Return required historical data length"""
+        return self.lookback
     
     def supports_instrument(self, token: int) -> bool:
-        return True  # Momentum can work on any instrument
+        """Momentum strategy supports all liquid instruments"""
+        return True
     
     def get_strategy_name(self) -> str:
-        return self._strategy_name
+        """Return strategy identifier"""
+        return "momentum"
 
 
-def create_momentum_processor(config: Dict[str, Any]) -> MomentumProcessor:
-    """Module-level factory function"""
-    # Support both legacy and new parameter names
-    lookback = config.get("lookback_periods") or config.get("lookback_period", 10)
-    position_size = config.get("position_size") or config.get("max_position_size", 100)
+def create_momentum_processor(config: Dict[str, Any]) -> RulesMomentumProcessor:
+    """
+    Factory function to create momentum strategy processor
     
-    return MomentumProcessor(
-        momentum_threshold=Decimal(str(config.get("momentum_threshold", "0.02"))),
-        lookback_periods=lookback,
-        position_size=position_size
+    Configuration parameters:
+    - lookback_periods: Number of periods for momentum calculation (default: 20)
+    - threshold: Minimum momentum threshold for signals (default: 0.01 = 1%)
+    - position_size: Order quantity (default: 100)
+    """
+    return RulesMomentumProcessor(
+        lookback_periods=config.get("lookback_periods", 20),
+        threshold=config.get("threshold", 0.01),
+        position_size=config.get("position_size", 100)
     )

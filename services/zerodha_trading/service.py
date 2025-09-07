@@ -6,6 +6,7 @@ from core.config.settings import RedpandaSettings, Settings
 from core.logging import (
     get_trading_logger_safe,
     get_error_logger_safe,
+    bind_broker_context,
 )
 from core.monitoring.pipeline_metrics import PipelineMetricsCollector
 from core.monitoring.prometheus_metrics import PrometheusMetricsCollector
@@ -35,7 +36,11 @@ class ZerodhaTradingService:
         self.settings = settings
         self.logger = get_trading_logger_safe("zerodha_trading")
         self.error_logger = get_error_logger_safe("zerodha_trading_errors")
-        self.metrics_collector = PipelineMetricsCollector(redis_client, settings, None)
+        try:
+            self.broker_logger = bind_broker_context(self.logger, "zerodha")
+        except Exception:
+            self.broker_logger = self.logger
+        self.metrics_collector = PipelineMetricsCollector(redis_client, settings)
         self.prom_metrics = prometheus_metrics
 
         # Subscribe only to zerodha.* validated signals
@@ -61,6 +66,10 @@ class ZerodhaTradingService:
 
     async def start(self) -> None:
         self.logger.info("ZerodhaTrading starting...")
+        try:
+            self.broker_logger.info("ZerodhaTrading started", broker="zerodha")
+        except Exception:
+            pass
         await self.orchestrator.start()
         if self.prom_metrics:
             try:
@@ -71,6 +80,10 @@ class ZerodhaTradingService:
     async def stop(self) -> None:
         await self.orchestrator.stop()
         self.logger.info("ZerodhaTrading stopped")
+        try:
+            self.broker_logger.info("ZerodhaTrading stopped", broker="zerodha")
+        except Exception:
+            pass
 
     async def _handle_validated_signal(self, message: Dict[str, Any], topic: str) -> None:
         """Process validated signals and emit placed events (zerodha)."""

@@ -1,0 +1,28 @@
+strategy_name: 'NIFTY Hybrid Momentum'
+strategy_class: 'hybrid_momentum'  # Hybrid strategy combining rules + ML
+enabled: true
+parameters:
+  # Rule-based configuration
+  rules_config:
+    lookback_periods: 20
+    threshold: 0.01
+    position_size: 100
+  
+  # ML configuration
+  ml_config:
+    lookback_periods: 20
+    model_path: 'strategies/models/momentum_model.joblib'
+    
+  # Hybrid decision policy
+  policy_type: 'majority_vote'  # or 'conservative'
+  min_ml_confidence: 0.6
+
+brokers: ['paper']
+instruments: [256265]  # NIFTY 50 token
+
+# Optional configuration
+description: 'Hybrid momentum strategy combining rule-based and ML predictions'
+tags: ['hybrid', 'momentum', 'rules-based', 'machine-learning']
+risk_limits:
+  max_position_size: 10000.0
+  risk_multiplier: 1.0

@@ -5,6 +5,9 @@ metadata:
   namespace: alphapt-production
 data:
   ENVIRONMENT: "production"
+  # Preferred for enhanced logging in the app
+  LOGGING__LEVEL: "INFO"
+  # Fallback level if enhanced logging is not available
   LOG_LEVEL: "INFO"
   PROMETHEUS_PORT: "9090"
   API_SERVER_PORT: "8000"
@@ -22,6 +25,7 @@ metadata:
   namespace: alphapt-staging
 data:
   ENVIRONMENT: "staging"
+  LOGGING__LEVEL: "DEBUG"
   LOG_LEVEL: "DEBUG"
   PROMETHEUS_PORT: "9090"
   API_SERVER_PORT: "8000"

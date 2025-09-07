@@ -10,9 +10,9 @@ from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-import structlog
+from core.logging import get_database_logger_safe
 
-logger = structlog.get_logger(__name__)
+logger = get_database_logger_safe("services.instrument_data.instrument_repository")
 from .instrument import Instrument, InstrumentRegistry
 
 
@@ -52,11 +52,11 @@ class InstrumentRepository:
             await self.session.flush()  # Get ID without committing
             await self.session.refresh(instrument)
             
-            logger.debug(f"Created instrument", instrument_token=instrument.instrument_token)
+            logger.debug("Created instrument", instrument_token=instrument.instrument_token)
             return instrument
             
         except SQLAlchemyError as e:
-            logger.error(f"Failed to create instrument", instrument_token=instrument.instrument_token, error=str(e))
+            logger.error("Failed to create instrument", instrument_token=instrument.instrument_token, error=str(e))
             raise
     
     async def get_instrument_by_token(self, instrument_token: int) -> Optional[Instrument]:
@@ -75,7 +75,7 @@ class InstrumentRepository:
             return result.scalar_one_or_none()
             
         except SQLAlchemyError as e:
-            logger.error(f"Failed to get instrument by token", instrument_token=instrument_token, error=str(e))
+            logger.error("Failed to get instrument by token", instrument_token=instrument_token, error=str(e))
             raise
     
     async def get_instruments_by_symbol(self, tradingsymbol: str, exchange: Optional[str] = None) -> List[Instrument]:
@@ -99,7 +99,7 @@ class InstrumentRepository:
             return result.scalars().all()
             
         except SQLAlchemyError as e:
-            logger.error(f"Failed to get instruments by symbol", tradingsymbol=tradingsymbol, error=str(e))
+            logger.error("Failed to get instruments by symbol", tradingsymbol=tradingsymbol, error=str(e))
             raise
     
     async def get_instruments_by_exchange(self, exchange: str, limit: Optional[int] = None) -> List[Instrument]:
@@ -123,7 +123,7 @@ class InstrumentRepository:
             return result.scalars().all()
             
         except SQLAlchemyError as e:
-            logger.error(f"Failed to get instruments by exchange", exchange=exchange, error=str(e))
+            logger.error("Failed to get instruments by exchange", exchange=exchange, error=str(e))
             raise
     
     async def update_instrument(self, instrument: Instrument) -> Instrument:
@@ -144,11 +144,11 @@ class InstrumentRepository:
             await self.session.flush()
             await self.session.refresh(instrument)
             
-            logger.debug(f"Updated instrument", instrument_token=instrument.instrument_token)
+            logger.debug("Updated instrument", instrument_token=instrument.instrument_token)
             return instrument
             
         except SQLAlchemyError as e:
-            logger.error(f"Failed to update instrument", instrument_token=instrument.instrument_token, error=str(e))
+            logger.error("Failed to update instrument", instrument_token=instrument.instrument_token, error=str(e))
             raise
     
     async def upsert_instrument(self, instrument_data: Dict[str, Any], source_file: str = None) -> Instrument:
@@ -181,7 +181,7 @@ class InstrumentRepository:
                 await self.session.flush()
                 await self.session.refresh(existing)
                 
-                logger.debug(f"Updated existing instrument", instrument_token=instrument_token)
+                logger.debug("Updated existing instrument", instrument_token=instrument_token)
                 return existing
             else:
                 # Create new instrument
@@ -189,7 +189,7 @@ class InstrumentRepository:
                 return await self.create_instrument(new_instrument)
                 
         except SQLAlchemyError as e:
-            logger.error(f"Failed to upsert instrument", instrument_token=instrument_data.get('instrument_token'), error=str(e))
+            logger.error("Failed to upsert instrument", instrument_token=instrument_data.get('instrument_token'), error=str(e))
             raise
     
     async def bulk_upsert_instruments(self, instruments_data: List[Dict[str, Any]], 
@@ -237,9 +237,11 @@ class InstrumentRepository:
                             'source_file': instrument.source_file
                         })
                     except Exception as e:
-                        logger.warning(f"Failed to prepare instrument data", 
-                                     instrument_token=instrument_data.get('instrument_token'), 
-                                     error=str(e))
+                        logger.warning(
+                            "Failed to prepare instrument data",
+                            instrument_token=instrument_data.get('instrument_token'),
+                            error=str(e),
+                        )
                         continue
                 
                 if not batch_values:
@@ -271,15 +273,15 @@ class InstrumentRepository:
                 processed_count = len(batch_values)
                 total_processed += processed_count
                 
-                logger.info(f"Processed batch efficiently", 
+                logger.info("Processed batch efficiently", 
                           batch_size=processed_count, 
                           total=total_processed)
             
-            logger.info(f"Bulk upsert completed efficiently", total_processed=total_processed)
+            logger.info("Bulk upsert completed efficiently", total_processed=total_processed)
             return total_processed
             
         except Exception as e:
-            logger.error(f"Bulk upsert failed", error=str(e))
+            logger.error("Bulk upsert failed", error=str(e))
             raise
     
     async def delete_instrument(self, instrument_token: int) -> bool:
@@ -297,12 +299,12 @@ class InstrumentRepository:
             if instrument:
                 await self.session.delete(instrument)
                 # FIXED: Removed commit - service layer will handle transaction boundaries
-                logger.debug(f"Deleted instrument", instrument_token=instrument_token)
+                logger.debug("Deleted instrument", instrument_token=instrument_token)
                 return True
             return False
             
         except SQLAlchemyError as e:
-            logger.error(f"Failed to delete instrument", instrument_token=instrument_token, error=str(e))
+            logger.error("Failed to delete instrument", instrument_token=instrument_token, error=str(e))
             raise
     
     async def get_all_instruments(self, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Instrument]:
@@ -328,7 +330,7 @@ class InstrumentRepository:
             return result.scalars().all()
             
         except SQLAlchemyError as e:
-            logger.error(f"Failed to get all instruments", error=str(e))
+            logger.error("Failed to get all instruments", error=str(e))
             raise
     
     async def count_instruments(self, exchange: Optional[str] = None) -> int:

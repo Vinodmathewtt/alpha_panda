@@ -30,7 +30,7 @@ log_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
-# Test environment management
+# Test environment management (uses standard docker-compose.yml)
 setup_test_environment() {
     log_info "Setting up Alpha Panda test environment..."
     
@@ -38,12 +38,12 @@ setup_test_environment() {
     cd "$PROJECT_ROOT"
     
     # Start test infrastructure with health checks
-    log_info "Starting test infrastructure..."
-    docker compose -f docker-compose.test.yml up -d
+    log_info "Starting infrastructure..."
+    docker compose -f docker-compose.yml up -d
     
     # Wait for all services to be healthy
     log_info "Waiting for services to be healthy..."
-    docker compose -f docker-compose.test.yml wait
+    docker compose -f docker-compose.yml wait || true
     
     # Wait for services to be healthy
     log_info "Waiting for services to be ready..."
@@ -51,53 +51,53 @@ setup_test_environment() {
     # Wait for Redpanda
     log_info "Waiting for Redpanda..."
     timeout 60 bash -c '
-        until docker compose -f docker-compose.test.yml exec -T redpanda-test rpk cluster info >/dev/null 2>&1; do
+        until docker compose -f docker-compose.yml exec -T redpanda rpk cluster info >/dev/null 2>&1; do
             echo "Waiting for Redpanda..."
             sleep 2
         done
     ' || {
         log_error "Redpanda failed to start"
-        docker compose -f docker-compose.test.yml logs redpanda-test
+        docker compose -f docker-compose.yml logs redpanda || true
         exit 1
     }
     
     # Wait for PostgreSQL
     log_info "Waiting for PostgreSQL..."
     timeout 30 bash -c '
-        until docker compose -f docker-compose.test.yml exec -T postgres-test pg_isready -U alpha_panda_test >/dev/null 2>&1; do
+        until docker compose -f docker-compose.yml exec -T postgres pg_isready -U alpha_panda >/dev/null 2>&1; do
             echo "Waiting for PostgreSQL..."
             sleep 2
         done
     ' || {
         log_error "PostgreSQL failed to start"
-        docker compose -f docker-compose.test.yml logs postgres-test
+        docker compose -f docker-compose.yml logs postgres || true
         exit 1
     }
     
     # Wait for Redis
     log_info "Waiting for Redis..."
     timeout 30 bash -c '
-        until docker compose -f docker-compose.test.yml exec -T redis-test redis-cli ping >/dev/null 2>&1; do
+        until docker compose -f docker-compose.yml exec -T redis redis-cli ping >/dev/null 2>&1; do
             echo "Waiting for Redis..."
             sleep 2
         done
     ' || {
         log_error "Redis failed to start"
-        docker compose -f docker-compose.test.yml logs redis-test
+        docker compose -f docker-compose.yml logs redis || true
         exit 1
     }
     
-    # Bootstrap test topics
+    # Bootstrap topics
     log_info "Bootstrapping Kafka topics..."
-    python scripts/bootstrap_test_topics.py || {
+    python scripts/bootstrap_topics.py || {
         log_warning "Topic bootstrap script not found, creating basic topics..."
-        docker compose -f docker-compose.test.yml exec -T redpanda-test rpk topic create market.ticks --partitions 3 --replicas 1
-        docker compose -f docker-compose.test.yml exec -T redpanda-test rpk topic create paper.signals.raw --partitions 3 --replicas 1
-        docker compose -f docker-compose.test.yml exec -T redpanda-test rpk topic create paper.signals.validated --partitions 3 --replicas 1
-        docker compose -f docker-compose.test.yml exec -T redpanda-test rpk topic create paper.orders.filled --partitions 3 --replicas 1
-        docker compose -f docker-compose.test.yml exec -T redpanda-test rpk topic create zerodha.signals.raw --partitions 3 --replicas 1
-        docker compose -f docker-compose.test.yml exec -T redpanda-test rpk topic create zerodha.signals.validated --partitions 3 --replicas 1
-        docker compose -f docker-compose.test.yml exec -T redpanda-test rpk topic create zerodha.orders.filled --partitions 3 --replicas 1
+        docker compose -f docker-compose.yml exec -T redpanda rpk topic create market.ticks --partitions 3 --replicas 1 || true
+        docker compose -f docker-compose.yml exec -T redpanda rpk topic create paper.signals.raw --partitions 3 --replicas 1 || true
+        docker compose -f docker-compose.yml exec -T redpanda rpk topic create paper.signals.validated --partitions 3 --replicas 1 || true
+        docker compose -f docker-compose.yml exec -T redpanda rpk topic create paper.orders.filled --partitions 3 --replicas 1 || true
+        docker compose -f docker-compose.yml exec -T redpanda rpk topic create zerodha.signals.raw --partitions 3 --replicas 1 || true
+        docker compose -f docker-compose.yml exec -T redpanda rpk topic create zerodha.signals.validated --partitions 3 --replicas 1 || true
+        docker compose -f docker-compose.yml exec -T redpanda rpk topic create zerodha.orders.filled --partitions 3 --replicas 1 || true
     }
     
     # Seed test data
@@ -123,8 +123,7 @@ run_unit_tests() {
         fi
     fi
     
-    # Install test dependencies
-    pip install -r requirements-test.txt
+    # Test dependencies are included in requirements.txt
     
     # Run unit tests with coverage
     python -m pytest tests/unit/ -v \
@@ -137,7 +136,7 @@ run_integration_tests() {
     log_info "Running integration tests..."
     
     # Ensure test environment is running
-    if ! docker compose -f docker-compose.test.yml ps | grep -q "Up"; then
+    if ! docker compose -f docker-compose.yml ps | grep -q "Up"; then
         log_warning "Test environment not running, setting up..."
         setup_test_environment
     fi
@@ -151,7 +150,7 @@ run_e2e_tests() {
     log_info "Running end-to-end tests..."
     
     # Ensure test environment is running
-    if ! docker compose -f docker-compose.test.yml ps | grep -q "Up"; then
+    if ! docker compose -f docker-compose.yml ps | grep -q "Up"; then
         log_warning "Test environment not running, setting up..."
         setup_test_environment
     fi
@@ -238,14 +237,14 @@ See [Performance Report](performance_report.html) for detailed performance metri
 
 ## Test Environment
 
-- **Redpanda**: $(docker compose -f docker-compose.test.yml exec -T redpanda-test rpk version | head -1 || echo "Not available")
-- **PostgreSQL**: $(docker compose -f docker-compose.test.yml exec -T postgres-test psql --version || echo "Not available")
-- **Redis**: $(docker compose -f docker-compose.test.yml exec -T redis-test redis-server --version || echo "Not available")
+- **Redpanda**: $(docker compose -f docker-compose.yml exec -T redpanda rpk version | head -1 || echo "Not available")
+- **PostgreSQL**: $(docker compose -f docker-compose.yml exec -T postgres psql --version || echo "Not available")
+- **Redis**: $(docker compose -f docker-compose.yml exec -T redis redis-server --version || echo "Not available")
 
 ## Infrastructure Status
 
 \`\`\`
-$(docker compose -f docker-compose.test.yml ps)
+$(docker compose -f docker-compose.yml ps)
 \`\`\`
 EOF
     
@@ -256,7 +255,7 @@ cleanup_test_environment() {
     log_info "Cleaning up test environment..."
     
     # Stop and remove test containers
-    docker compose -f docker-compose.test.yml down -v
+    docker compose -f docker-compose.yml down -v
     
     # Clean up Docker resources
     docker system prune -f
@@ -274,19 +273,19 @@ show_test_status() {
     log_info "Test Environment Status"
     echo "========================="
     
-    if docker compose -f docker-compose.test.yml ps | grep -q "Up"; then
+    if docker compose -f docker-compose.yml ps | grep -q "Up"; then
         log_success "Test environment is running"
-        docker compose -f docker-compose.test.yml ps
+        docker compose -f docker-compose.yml ps
         
         # Show topic list
         echo ""
         log_info "Kafka Topics:"
-        docker compose -f docker-compose.test.yml exec -T redpanda-test rpk topic list || log_warning "Could not list topics"
+        docker compose -f docker-compose.yml exec -T redpanda rpk topic list || log_warning "Could not list topics"
         
         # Show database status
         echo ""
         log_info "Database Tables:"
-        docker compose -f docker-compose.test.yml exec -T postgres-test psql -U alpha_panda_test -d alpha_panda_test -c "\\dt" || log_warning "Could not list tables"
+        docker compose -f docker-compose.yml exec -T postgres psql -U alpha_panda -d alpha_panda -c "\\dt" || log_warning "Could not list tables"
         
     else
         log_warning "Test environment is not running"

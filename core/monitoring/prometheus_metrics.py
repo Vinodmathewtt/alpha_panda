@@ -98,6 +98,30 @@ class PrometheusMetricsCollector:
             ['strategy_id', 'broker'],
             registry=self.registry
         )
+
+        # Paper trading specific metrics (optional nice-to-have)
+        self.paper_fill_latency = Histogram(
+            'paper_fill_latency_seconds',
+            'Latency from validated signal to fill emission (paper)',
+            ['strategy_id', 'broker'],
+            buckets=(getattr(buckets, 'processing_latency_seconds', None) if buckets else [
+                0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5
+            ]),
+            registry=self.registry,
+        )
+        self.paper_slippage_bps = Histogram(
+            'paper_slippage_bps',
+            'Fill slippage in basis points (absolute)',
+            ['side', 'broker'],
+            buckets=[0.0, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0],
+            registry=self.registry,
+        )
+        self.paper_cash_balance = Gauge(
+            'paper_cash_balance',
+            'Current paper cash balance by strategy',
+            ['strategy_id', 'broker'],
+            registry=self.registry,
+        )
         
         # Error metrics
         self.errors_total = Counter(
@@ -105,6 +129,20 @@ class PrometheusMetricsCollector:
             'Total errors by component',
             ['component', 'error_type', 'broker'],
             registry=self.registry
+        )
+
+        # ML model load metrics
+        self.ml_model_load_success = Counter(
+            'ml_model_load_success_total',
+            'Total successful ML model loads',
+            ['strategy_id'],
+            registry=self.registry,
+        )
+        self.ml_model_load_failure = Counter(
+            'ml_model_load_failure_total',
+            'Total failed ML model loads',
+            ['strategy_id'],
+            registry=self.registry,
         )
         
         # Connection health
@@ -187,6 +225,25 @@ class PrometheusMetricsCollector:
     def set_strategy_pnl(self, strategy_id: str, broker: str, pnl: float):
         """Set current strategy P&L"""
         self.strategy_pnl.labels(strategy_id=strategy_id, broker=broker).set(pnl)
+
+    # Paper trading helpers
+    def record_paper_fill_latency(self, strategy_id: str, broker: str, latency_seconds: float) -> None:
+        try:
+            self.paper_fill_latency.labels(strategy_id=strategy_id, broker=broker).observe(latency_seconds)
+        except Exception:
+            pass
+
+    def record_paper_slippage_bps(self, side: str, broker: str, bps: float) -> None:
+        try:
+            self.paper_slippage_bps.labels(side=side, broker=broker).observe(max(0.0, float(bps)))
+        except Exception:
+            pass
+
+    def set_paper_cash_balance(self, strategy_id: str, broker: str, cash: float) -> None:
+        try:
+            self.paper_cash_balance.labels(strategy_id=strategy_id, broker=broker).set(float(cash))
+        except Exception:
+            pass
     
     def record_error(self, component: str, error_type: str, broker: str):
         """Record error by component"""
@@ -212,6 +269,19 @@ class PrometheusMetricsCollector:
         """Set last activity timestamp for a service/stage/broker to now (unix seconds)."""
         try:
             self.last_activity_timestamp.labels(service=service, stage=stage, broker=broker).set(time.time())
+        except Exception:
+            pass
+
+    # ML metrics helpers
+    def record_ml_model_load_success(self, strategy_id: str) -> None:
+        try:
+            self.ml_model_load_success.labels(strategy_id=strategy_id).inc()
+        except Exception:
+            pass
+
+    def record_ml_model_load_failure(self, strategy_id: str) -> None:
+        try:
+            self.ml_model_load_failure.labels(strategy_id=strategy_id).inc()
         except Exception:
             pass
 

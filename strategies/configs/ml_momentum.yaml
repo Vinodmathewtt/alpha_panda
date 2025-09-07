@@ -1,0 +1,18 @@
+brokers:
+- paper
+enabled: true
+instrument_tokens:
+# Example instrument tokens; replace with your universe
+- 256265
+- 260105
+- 738561
+module_name: strategies.implementations.ml_momentum
+parameters:
+  model_path: models/sample_momentum_v1.joblib
+  lookback_periods: 20
+  position_size: 100
+  confidence_threshold: 0.6
+  expected_feature_count: 5
+strategy_class: MLMomentumProcessor
+strategy_name: ML_Momentum_Sample_1
+use_composition: true

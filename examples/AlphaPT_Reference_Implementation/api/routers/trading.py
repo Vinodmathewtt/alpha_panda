@@ -1,4 +1,9 @@
-"""Trading operations API endpoints."""
+"""Trading operations API endpoints.
+
+Note: This example predates the standardized field name `execution_mode`.
+Where it refers to a `trading_mode` concept, prefer `execution_mode`
+(`paper` or `zerodha`) in new code and schemas.
+"""
 
 from typing import List, Dict, Any, Optional
 from decimal import Decimal

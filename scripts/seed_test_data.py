@@ -9,6 +9,7 @@ including test strategies, users, and configurations.
 import asyncio
 import sys
 import json
+import os
 from datetime import datetime
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -18,8 +19,12 @@ from sqlalchemy import text
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Database URL for testing
-TEST_DATABASE_URL = "postgresql+asyncpg://alpha_panda_test:test_password@localhost:5433/alpha_panda_test"
+# Database URL: prefer explicit env, fallback to standard dev DB
+TEST_DATABASE_URL = (
+    os.getenv("DATABASE__POSTGRES_URL")
+    or os.getenv("DATABASE_URL")
+    or "postgresql+asyncpg://alpha_panda:alpha_panda@localhost:5432/alpha_panda"
+)
 
 # Test data
 TEST_STRATEGIES = [

@@ -52,6 +52,20 @@ class PaperTradingSettings(BaseModel):
     slippage_percent: float = 0.05  # 0.05% slippage
     commission_percent: float = 0.1  # 0.1% commission
     starting_cash: float = 1_000_000.0  # Starting cash for paper portfolios
+    # Optional latency simulation (Phase 1 improvements)
+    latency_ms_mean: float = 0.0
+    latency_ms_std: float = 0.0
+    # Partial fills (Phase 2)
+    partial_fill_prob: float = 0.0  # Probability [0,1] to split into partial fills
+    max_partials: int = 3           # Max number of partial fill messages when splitting
+    # Guardrails
+    min_quantity: int = 1
+    max_quantity: int | None = None
+    min_price: float | None = 0.0
+    max_price: float | None = None
+    allowed_instruments: list[int] = []  # empty means allow all
+    # Simple risk limit
+    max_position_notional: float | None = None  # cap per-order notional (price*qty)
 
 
 class ZerodhaSettings(BaseModel):

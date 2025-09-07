@@ -8,7 +8,7 @@ import queue
 import time
 import gzip
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Optional, Any
 import structlog
@@ -68,6 +68,15 @@ class ChannelFilter(logging.Filter):
         ch = getattr(record, "channel", None)
         if ch is not None:
             return str(ch) == self.expected_channel
+        # structlog: when using ProcessorFormatter.wrap_for_formatter, the event dict is in record.msg
+        try:
+            msg_obj = record.msg
+            if isinstance(msg_obj, dict):
+                ev_ch = msg_obj.get("channel")
+                if ev_ch is not None:
+                    return str(ev_ch) == self.expected_channel
+        except Exception:
+            pass
         name = getattr(record, "name", "")
         for prefix in self.allowed_logger_prefixes:
             if name.startswith(prefix):
@@ -206,10 +215,25 @@ class EnhancedLoggerManager:
             return
             
         root_logger = logging.getLogger()
-        
-        # If a console handler already exists (e.g., set by uvicorn), reconfigure it
-        for handler in root_logger.handlers:
-            if isinstance(handler, logging.StreamHandler) and getattr(handler, "stream", None) == sys.stdout:
+
+        # Robust bool coercion for env values that may arrive as strings
+        def _as_bool(v: Any) -> bool:
+            try:
+                if isinstance(v, bool):
+                    return v
+                s = str(v).strip().lower()
+                if s in ("1", "true", "yes", "on"): return True
+                if s in ("0", "false", "no", "off", ""): return False
+            except Exception:
+                pass
+            return bool(v)
+
+        use_console_json = _as_bool(getattr(self.settings.logging, "console_json_format", False))
+
+        # If a console handler already exists (e.g., set by uvicorn), reconfigure it (stdout or stderr)
+        reconfigured = False
+        for handler in list(root_logger.handlers):
+            if isinstance(handler, logging.StreamHandler) and getattr(handler, "stream", None) in (sys.stdout, sys.stderr):
                 handler.setLevel(getattr(logging, self.settings.logging.level.upper()))
                 foreign_chain = [
                     structlog.stdlib.add_log_level,
@@ -217,9 +241,7 @@ class EnhancedLoggerManager:
                     structlog.processors.TimeStamper(fmt="iso"),
                 ]
                 console_processor = (
-                    structlog.processors.JSONRenderer()
-                    if self.settings.logging.console_json_format
-                    else structlog.dev.ConsoleRenderer()
+                    structlog.processors.JSONRenderer() if use_console_json else structlog.dev.ConsoleRenderer()
                 )
                 handler.setFormatter(
                     structlog.stdlib.ProcessorFormatter(
@@ -227,9 +249,11 @@ class EnhancedLoggerManager:
                         foreign_pre_chain=foreign_chain,
                     )
                 )
-                # Ensure root level matches desired level
-                root_logger.setLevel(getattr(logging, self.settings.logging.level.upper()))
-                return  # Reconfigured existing console handler; no need to add another
+                reconfigured = True
+        if reconfigured:
+            # Ensure root level matches desired level
+            root_logger.setLevel(getattr(logging, self.settings.logging.level.upper()))
+            return  # Reconfigured existing console handler(s); no need to add another
             
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(getattr(logging, self.settings.logging.level.upper()))
@@ -241,9 +265,7 @@ class EnhancedLoggerManager:
             structlog.processors.TimeStamper(fmt="iso"),
         ]
         console_processor = (
-            structlog.processors.JSONRenderer()
-            if self.settings.logging.console_json_format
-            else structlog.dev.ConsoleRenderer()
+            structlog.processors.JSONRenderer() if use_console_json else structlog.dev.ConsoleRenderer()
         )
         console_handler.setFormatter(
             structlog.stdlib.ProcessorFormatter(
@@ -282,7 +304,11 @@ class EnhancedLoggerManager:
             encoding="utf-8"
         )
         
-        file_handler.setLevel(getattr(logging, self.settings.logging.level.upper()))
+        # Keep root file compact when multi-channel logging is active
+        if getattr(self.settings.logging, "multi_channel_enabled", False):
+            file_handler.setLevel(logging.WARNING)
+        else:
+            file_handler.setLevel(getattr(logging, self.settings.logging.level.upper()))
         
         # Use structlog ProcessorFormatter for files (prefer JSON)
         foreign_chain = [
@@ -363,6 +389,22 @@ class EnhancedLoggerManager:
                 if lg.level == logging.NOTSET:
                     lg.setLevel(logging.WARNING)
                 lg.propagate = False
+
+        # Summary: log channel wiring status for quick diagnostics
+        try:
+            wired = sorted([ch.value for ch in self.channel_handlers.keys()])
+            attach_stats = {}
+            for name in ("aiokafka", "kafka", "uvicorn", "uvicorn.access", "sqlalchemy"):
+                attach_stats[name] = len(logging.getLogger(name).handlers)
+            logging.getLogger("alpha_panda.logging").info(
+                "Multi-channel logging configured",
+                extra={
+                    "channels": wired,
+                    "attached_handlers": attach_stats,
+                },
+            )
+        except Exception:
+            pass
     
     def _create_channel_handler(self, channel: LogChannel, config) -> logging.Handler:
         """Create a file handler for a specific channel."""
@@ -538,7 +580,7 @@ class EnhancedLoggerManager:
 
         compression_enabled = getattr(self.settings.logging, "compression_enabled", True)
         compress_age_days = int(getattr(self.settings.logging, "compression_age_days", 7) or 7)
-        compress_before = datetime.utcnow() - timedelta(days=compress_age_days)
+        compress_before = datetime.now(timezone.utc) - timedelta(days=compress_age_days)
 
         # Build retention map from channel configs
         retention_by_prefix: Dict[str, int] = {}
@@ -561,7 +603,7 @@ class EnhancedLoggerManager:
                 continue
 
             try:
-                mtime = datetime.utcfromtimestamp(p.stat().st_mtime)
+                mtime = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc)
             except Exception:
                 continue
 
@@ -577,7 +619,7 @@ class EnhancedLoggerManager:
                     pass
 
         # Retention enforcement for archived files
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         for p in archived_dir.iterdir():
             if not p.is_file():
                 continue
@@ -588,7 +630,7 @@ class EnhancedLoggerManager:
                     retention_days = days
                     break
             try:
-                mtime = datetime.utcfromtimestamp(p.stat().st_mtime)
+                mtime = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc)
                 if (now - mtime).days > retention_days:
                     p.unlink(missing_ok=True)
             except Exception:
@@ -640,7 +682,12 @@ class EnhancedLoggerManager:
                 app_name = getattr(self.settings, 'app_name', None)
                 version = getattr(self.settings, 'version', None)
                 if env is not None:
-                    event_dict.setdefault('env', str(env))
+                    try:
+                        # Prefer enum .value if present; fallback to str()
+                        _env_str = getattr(env, 'value', None) or str(env)
+                    except Exception:
+                        _env_str = str(env)
+                    event_dict.setdefault('env', _env_str)
                 if app_name:
                     event_dict.setdefault('service', app_name)
                 if version:
@@ -733,14 +780,17 @@ class EnhancedLoggerManager:
         if component:
             logger = logger.bind(component=component)
             
-            # If multi-channel logging is enabled, add channel-specific handler
+            # If multi-channel logging is enabled, add channel-specific handler and bind channel
             if self.settings.logging.multi_channel_enabled:
                 channel = get_channel_for_component(component)
+                # Bind channel into the event dict so ChannelFilter can route correctly
+                logger = logger.bind(channel=channel.value)
                 if channel in self.channel_handlers:
-                    # Add channel-specific logging
+                    # Add channel-specific logging and prevent propagation to root to avoid duplication
                     stdlib_logger = logging.getLogger(name)
                     if self.channel_handlers[channel] not in stdlib_logger.handlers:
                         stdlib_logger.addHandler(self.channel_handlers[channel])
+                    stdlib_logger.propagate = False
         
         self.configured_loggers[name] = logger
         return logger
@@ -752,11 +802,12 @@ class EnhancedLoggerManager:
         # Add channel context
         logger = logger.bind(channel=channel.value)
         
-        # Add channel-specific handler if available
+        # Add channel-specific handler if available and prevent propagation to root
         if channel in self.channel_handlers:
             stdlib_logger = logging.getLogger(name)
             if self.channel_handlers[channel] not in stdlib_logger.handlers:
                 stdlib_logger.addHandler(self.channel_handlers[channel])
+            stdlib_logger.propagate = False
         
         return logger
     

@@ -14,7 +14,7 @@ from testcontainers.postgres import PostgresContainer
 @pytest.fixture(scope="session")
 def test_infrastructure():
     """Start containerized infrastructure for testing"""
-    with DockerCompose(".", compose_file_name="docker-compose.test.yml") as compose:
+    with DockerCompose(".", compose_file_name="docker-compose.yml") as compose:
         # Wait for services to be ready
         redpanda_port = compose.get_service_port("redpanda", 9092)
         postgres_port = compose.get_service_port("postgres", 5432)

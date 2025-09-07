@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Test script to validate enhanced market data capture from PyKiteConnect.
+Ad-hoc script to validate enhanced market data capture from PyKiteConnect.
 Verifies that all available data fields are being captured including market depth.
 """
 
 import sys
-import asyncio
 from pathlib import Path
 from decimal import Decimal
 
 # Add project root to Python path
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(project_root))
 
 from services.market_feed.formatter import TickFormatter
 from core.schemas.events import MarketTick
+
 
 def test_basic_tick_formatting():
     """Test basic tick data formatting"""
@@ -92,14 +92,13 @@ def test_full_mode_with_depth():
             "low": 19430.25,
             "close": 19475.50
         },
-        "oi": 8500000,  # Open Interest
+        "oi": 8500000,
         "oi_day_high": 8600000,
         "oi_day_low": 8400000,
         "last_trade_time": "2025-01-15 13:16:54",
         "exchange_timestamp": "2025-01-15 13:16:56",
         "tradable": True,
         "mode": "full",
-        # CRITICAL: 5-level market depth
         "depth": {
             "buy": [
                 {"price": 19500.00, "quantity": 100, "orders": 5},
@@ -126,7 +125,7 @@ def test_full_mode_with_depth():
     
     # Verify complete data captured
     assert market_tick.volume_traded == 1250000
-    assert market_tick.oi == 8500000  # Open Interest
+    assert market_tick.oi == 8500000
     assert market_tick.depth is not None
     
     # Verify 5-level market depth
@@ -157,7 +156,6 @@ def test_error_handling():
     try:
         malformed_tick = {
             "instrument_token": 256265,
-            # Missing last_price
             "volume_traded": 1000
         }
         formatted = formatter.format_tick(malformed_tick)
@@ -190,12 +188,10 @@ def test_data_coverage_comparison():
     print("\n🔍 DATA COVERAGE COMPARISON")
     print("=" * 50)
     
-    # Old implementation captured fields
     old_fields = [
         "instrument_token", "last_price", "volume", "timestamp", "ohlc"
     ]
     
-    # New implementation captures fields
     new_fields = [
         "instrument_token", "last_price", "timestamp",
         "volume_traded", "last_traded_quantity", "average_traded_price",
@@ -214,8 +210,7 @@ def test_data_coverage_comparison():
         print(f"  ✅ {field}")
     
     print(f"\n🎯 Critical additions for trading strategies:")
-    critical_additions = ["depth", "volume_traded", "total_buy_quantity", "total_sell_quantity", "oi"]
-    for field in critical_additions:
+    for field in ["depth", "volume_traded", "total_buy_quantity", "total_sell_quantity", "oi"]:
         if field in missing_in_old:
             print(f"  🔥 {field} - Essential for advanced strategies")
 
@@ -245,3 +240,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

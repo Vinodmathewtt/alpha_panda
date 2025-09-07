@@ -10,9 +10,9 @@ from decimal import Decimal
 from strategies.core.factory import StrategyFactory as CompositionFactory
 from strategies.core.executor import StrategyExecutor
 from strategies.core.config import StrategyConfig, ExecutionContext
-from core.logging import get_logger
+from core.logging import get_trading_logger_safe
 
-logger = get_logger("strategy_factory")
+logger = get_trading_logger_safe("strategy_factory")
 
 class StrategyFactory:
     """
@@ -22,18 +22,8 @@ class StrategyFactory:
     ✅ NOW RETURNS: StrategyExecutor objects using composition
     """
     
-    # ✅ ONLY COMPOSITION STRATEGY REGISTRY - NO LEGACY ENTRIES
-    STRATEGY_REGISTRY = {
-        "MomentumProcessor": "strategies.implementations.momentum",
-        "MeanReversionProcessor": "strategies.implementations.mean_reversion",
-    }
-    
-    # Migration mapping for automatic conversion of legacy names
-    MIGRATION_MAPPING = {
-        "SimpleMomentumStrategy": "MomentumProcessor",
-        "MomentumStrategy": "MomentumProcessor", 
-        "MeanReversionStrategy": "MeanReversionProcessor",
-    }
+    # Migration mapping removed - let users explicitly choose strategy types
+    MIGRATION_MAPPING = {}
     
     @classmethod
     def create_strategy(cls, strategy_id: str, strategy_type: str, 
@@ -52,8 +42,12 @@ class StrategyFactory:
         # Automatically convert legacy strategy types to composition types
         composition_type = cls.MIGRATION_MAPPING.get(strategy_type, strategy_type)
         
-        if composition_type not in cls.STRATEGY_REGISTRY:
-            available = ", ".join(cls.STRATEGY_REGISTRY.keys())
+        # Discover available types from the composition factory to avoid drift
+        _composition_factory = CompositionFactory()
+        _available_types = set(_composition_factory.get_available_strategy_types())
+
+        if composition_type not in _available_types:
+            available = ", ".join(sorted(_available_types))
             legacy_types = list(cls.MIGRATION_MAPPING.keys())
             raise ValueError(
                 f"Unknown strategy type: {strategy_type} -> {composition_type}. "
@@ -85,7 +79,7 @@ class StrategyFactory:
         composition_factory = CompositionFactory()
         executor = composition_factory.create_executor(strategy_config, context)
         
-        logger.info(f"Created composition strategy executor", 
+        logger.info("Created composition strategy executor", 
                    strategy_id=strategy_id, 
                    strategy_type=composition_type,
                    original_type=strategy_type,
@@ -104,7 +98,7 @@ class StrategyFactory:
         config_path = Path(__file__).parent.parent.parent / "strategies" / "configs"
         
         if not config_path.exists():
-            logger.warning(f"Strategy configs directory not found: {config_path}")
+            logger.warning("Strategy configs directory not found", path=str(config_path))
             return strategies
         
         for config_file in config_path.glob("*.yaml"):
@@ -117,38 +111,48 @@ class StrategyFactory:
                     logger.info(f"Skipping disabled strategy: {config_file.name}")
                     continue
                 
+                # Allow either strategy_class (legacy key) or strategy_type
+                strategy_class = (
+                    config.get("strategy_class") or config.get("strategy_type")
+                )
+                if not strategy_class:
+                    raise ValueError("Strategy config missing 'strategy_class' or 'strategy_type'")
+
                 # ❌ WARN ABOUT LEGACY STRATEGY TYPES (but auto-convert)
-                strategy_class = config["strategy_class"]
                 if strategy_class in cls.MIGRATION_MAPPING:
                     new_type = cls.MIGRATION_MAPPING[strategy_class]
                     logger.warning(
-                        f"Legacy strategy type '{strategy_class}' in {config_file.name} "
-                        f"automatically converted to '{new_type}'. "
-                        f"Please update YAML to use composition types."
+                        "Legacy strategy type auto-converted",
+                        legacy_type=strategy_class,
+                        converted_type=new_type,
+                        file=config_file.name,
                     )
-                
+
                 # ✅ CREATE COMPOSITION STRATEGY
                 strategy_executor = cls.create_strategy(
                     strategy_id=config["strategy_name"],
-                    strategy_type=config["strategy_class"],
+                    strategy_type=strategy_class,
                     parameters=config.get("parameters", {}),
                     brokers=config.get("brokers", ["paper"]),
-                    instrument_tokens=config.get("instrument_tokens", [])
+                    instrument_tokens=(
+                        config.get("instrument_tokens")
+                        or config.get("instruments", [])
+                    )
                 )
                 
                 strategies.append(strategy_executor)
-                logger.info(f"Loaded composition strategy from YAML: {config['strategy_name']}")
+                logger.info("Loaded composition strategy from YAML", strategy_name=config["strategy_name"])
                 
             except Exception as e:
-                logger.error(f"Failed to load strategy from {config_file}: {e}")
+                logger.error("Failed to load strategy from YAML", file=str(config_file), error=str(e))
         
-        logger.info(f"Loaded {len(strategies)} composition strategies from YAML")
+        logger.info("Loaded composition strategies from YAML", count=len(strategies))
         return strategies
     
     @classmethod
     def get_available_strategies(cls) -> List[str]:
         """Get list of available COMPOSITION strategy types only"""
-        return list(cls.STRATEGY_REGISTRY.keys())
+        return CompositionFactory().get_available_strategy_types()
     
     @classmethod
     def get_legacy_migration_mapping(cls) -> Dict[str, str]:
@@ -168,7 +172,11 @@ class StrategyFactory:
                     content = f.read()
                     for legacy_type in legacy_types:
                         if legacy_type in content:
-                            logger.warning(f"Legacy reference '{legacy_type}' found in {config_file} (will be auto-converted)")
+                            logger.warning(
+                                "Legacy reference found (auto-convert)",
+                                reference=legacy_type,
+                                file=str(config_file),
+                            )
         
-        logger.info("✅ Composition-only factory ready - legacy types auto-converted")
+        logger.info("Composition-only factory ready - legacy types auto-converted")
         return True

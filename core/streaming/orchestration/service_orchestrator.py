@@ -37,7 +37,7 @@ class ServiceOrchestrator:
         if self._running:
             return
         
-        logger.info(f"Starting service orchestrator for {self.service_name}")
+        logger.info("Starting service orchestrator", service_name=self.service_name)
         
         # Start producers
         for producer in self.producers:
@@ -56,14 +56,14 @@ class ServiceOrchestrator:
             self._consumption_tasks.append(task)
         
         self._running = True
-        logger.info(f"Service orchestrator started for {self.service_name}")
+        logger.info("Service orchestrator started", service_name=self.service_name)
     
     async def stop(self) -> None:
         """Stop all components gracefully."""
         if not self._running:
             return
         
-        logger.info(f"Stopping service orchestrator for {self.service_name}")
+        logger.info("Stopping service orchestrator", service_name=self.service_name)
         
         # Cancel consumption tasks
         for task in self._consumption_tasks:
@@ -82,7 +82,7 @@ class ServiceOrchestrator:
             await producer.stop()
         
         self._running = False
-        logger.info(f"Service orchestrator stopped for {self.service_name}")
+        logger.info("Service orchestrator stopped", service_name=self.service_name)
     
     async def _consumption_loop(
         self, 
@@ -95,9 +95,9 @@ class ServiceOrchestrator:
                 await reliability_layer.process_message(message)
         except asyncio.CancelledError:
             # Graceful shutdown
-            logger.info(f"Consumption loop cancelled for {consumer.topics}")
+            logger.info("Consumption loop cancelled", topics=consumer.topics)
         except Exception as e:
-            logger.error(f"Fatal error in consumption loop: {e}")
+            logger.error("Fatal error in consumption loop", error=str(e))
             # In production, you might want to restart the loop
             raise
     

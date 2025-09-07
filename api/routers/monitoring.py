@@ -1,5 +1,10 @@
 """
 Monitoring and health API endpoints
+
+Query parameters:
+- broker (optional, string): selects which broker context to use when returning
+  pipeline health or metrics data. Valid values: "paper", "zerodha", "shared".
+  Defaults to the first active broker (or "shared" for shared metrics paths).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -98,6 +103,7 @@ async def pipeline_status(
     settings: Settings = Depends(get_settings),
     redis_client: redis.Redis = Depends(get_redis_client),
     metrics_collector = Depends(get_pipeline_metrics_collector),
+    broker: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get pipeline flow status and metrics"""
     start_time = time.time()
@@ -110,7 +116,7 @@ async def pipeline_status(
     
     try:
         # Get current pipeline validation status
-        broker_ns = settings.active_brokers[0] if settings.active_brokers else "unknown"
+        broker_ns = broker or (settings.active_brokers[0] if settings.active_brokers else "shared")
         validation_key = f"pipeline:validation:{broker_ns}"
         validation_data = await redis_client.get(validation_key)
         
@@ -124,8 +130,8 @@ async def pipeline_status(
                 "message": "No recent pipeline validation data available"
             }
         
-        # Get pipeline health metrics via DI collector
-        health_data = await metrics_collector.get_pipeline_health()
+        # Get pipeline health metrics via DI collector for the selected broker
+        health_data = await metrics_collector.get_pipeline_health(broker_context=broker_ns)
         
         processing_time = (time.time() - start_time) * 1000
         
@@ -318,15 +324,17 @@ async def reset_pipeline_metrics(
     settings: Settings = Depends(get_settings),
     redis_client: redis.Redis = Depends(get_redis_client),
     metrics_collector = Depends(get_pipeline_metrics_collector),
+    broker: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Reset pipeline metrics (useful for testing)"""
     try:
-        await metrics_collector.reset_metrics()
+        broker_ns = broker or (settings.active_brokers[0] if settings.active_brokers else "shared")
+        await metrics_collector.reset_metrics(broker_ns)
         
         return {
             "status": "success",
             "message": "Pipeline metrics reset successfully",
-            "broker": settings.active_brokers[0] if settings.active_brokers else "unknown"
+            "broker": broker_ns
         }
         
     except Exception as e:
@@ -342,6 +350,7 @@ async def get_metrics_summary(
     settings: Settings = Depends(get_settings),
     redis_client: redis.Redis = Depends(get_redis_client),
     metrics_collector = Depends(get_pipeline_metrics_collector),
+    broker: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get overall metrics summary"""
     start_time = time.time()
@@ -353,7 +362,8 @@ async def get_metrics_summary(
                    method="GET")
     
     try:
-        health_data = await metrics_collector.get_pipeline_health()
+        broker_ns = broker or (settings.active_brokers[0] if settings.active_brokers else "shared")
+        health_data = await metrics_collector.get_pipeline_health(broker_ns)
         
         # Calculate summary statistics
         stages = health_data.get("stages", {})
@@ -361,7 +371,7 @@ async def get_metrics_summary(
         total_stages = len(stages)
         
         # Get total counts across all stages
-        broker_ns = settings.active_brokers[0] if settings.active_brokers else "unknown"
+        # broker_ns computed above
         total_events = 0
         for stage_name in ["market_ticks", "signals", "orders", "portfolio_updates"]:
             count_key = f"pipeline:{stage_name}:{broker_ns}:count"

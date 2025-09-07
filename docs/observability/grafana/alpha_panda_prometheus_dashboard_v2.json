@@ -20,11 +20,19 @@
     },
     {
       "type": "graph",
+      "title": "Validator Warnings by Stage",
+      "targets": [
+        {"expr": "sum(rate(validator_warnings_total[5m])) by (stage, broker, issue)", "legendFormat": "{{stage}} {{broker}} {{issue}}"}
+      ],
+      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 8}
+    },
+    {
+      "type": "graph",
       "title": "Market Ticks",
       "targets": [
         {"expr": "sum(rate(market_ticks_received_total[1m])) by (source)", "legendFormat": "{{source}}"}
       ],
-      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 8}
+      "gridPos": {"x": 0, "y": 24, "w": 24, "h": 8}
     },
     {
       "type": "graph",
@@ -32,7 +40,7 @@
       "targets": [
         {"expr": "sum(rate(trading_events_processed_total{service=\"paper_trading\"}[1m])) by (broker, event_type)", "legendFormat": "{{broker}} {{event_type}}"}
       ],
-      "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8}
+      "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8}
     },
     {
       "type": "graph",
@@ -40,7 +48,7 @@
       "targets": [
         {"expr": "sum(rate(trading_events_processed_total{service=\"zerodha_trading\"}[1m])) by (broker, event_type)", "legendFormat": "{{broker}} {{event_type}}"}
       ],
-      "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8}
+      "gridPos": {"x": 12, "y": 32, "w": 12, "h": 8}
     },
     {
       "type": "graph",
@@ -48,7 +56,7 @@
       "targets": [
         {"expr": "sum(rate(trading_dlq_messages_total{service=~\"paper_trading|zerodha_trading\"}[5m])) by (service, broker)", "legendFormat": "{{service}} {{broker}}"}
       ],
-      "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8}
+      "gridPos": {"x": 0, "y": 40, "w": 12, "h": 8}
     },
     {
       "type": "stat",
@@ -56,7 +64,7 @@
       "targets": [
         {"expr": "time() - trading_last_activity_timestamp_unix{service=\"paper_trading\",stage=\"orders\",broker=\"paper\"}", "legendFormat": "inactivity"}
       ],
-      "gridPos": {"x": 12, "y": 32, "w": 6, "h": 4}
+      "gridPos": {"x": 12, "y": 40, "w": 6, "h": 4}
     },
     {
       "type": "stat",
@@ -64,7 +72,7 @@
       "targets": [
         {"expr": "time() - trading_last_activity_timestamp_unix{service=\"zerodha_trading\",stage=\"orders\",broker=\"zerodha\"}", "legendFormat": "inactivity"}
       ],
-      "gridPos": {"x": 18, "y": 32, "w": 6, "h": 4}
+      "gridPos": {"x": 18, "y": 40, "w": 6, "h": 4}
     },
     {
       "type": "graph",
@@ -73,7 +81,7 @@
         {"expr": "histogram_quantile(0.5, sum(rate(market_tick_enqueue_delay_seconds_bucket[1m])) by (le, source))", "legendFormat": "p50 {{source}}"},
         {"expr": "histogram_quantile(0.95, sum(rate(market_tick_enqueue_delay_seconds_bucket[1m])) by (le, source))", "legendFormat": "p95 {{source}}"}
       ],
-      "gridPos": {"x": 0, "y": 48, "w": 12, "h": 8}
+      "gridPos": {"x": 0, "y": 56, "w": 12, "h": 8}
     },
     {
       "type": "graph",
@@ -82,7 +90,7 @@
         {"expr": "histogram_quantile(0.5, sum(rate(market_tick_emit_latency_seconds_bucket[1m])) by (le, service))", "legendFormat": "p50 {{service}}"},
         {"expr": "histogram_quantile(0.95, sum(rate(market_tick_emit_latency_seconds_bucket[1m])) by (le, service))", "legendFormat": "p95 {{service}}"}
       ],
-      "gridPos": {"x": 12, "y": 48, "w": 12, "h": 8}
+      "gridPos": {"x": 12, "y": 56, "w": 12, "h": 8}
     },
     {
       "type": "graph",
@@ -90,10 +98,9 @@
       "targets": [
         {"expr": "max(kafka_consumergroup_lag{group=~\".*(paper_trading|zerodha_trading).*\"}) by (group,topic)", "legendFormat": "{{group}} {{topic}}"}
       ],
-      "gridPos": {"x": 0, "y": 56, "w": 24, "h": 8}
+      "gridPos": {"x": 0, "y": 64, "w": 24, "h": 8}
     }
   ],
   "schemaVersion": 36,
   "version": 1
 }
-

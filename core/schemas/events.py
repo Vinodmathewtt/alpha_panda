@@ -2,11 +2,11 @@
 # This is the foundation - ALL services must use these schemas
 
 from pydantic import BaseModel, Field, ConfigDict
+from pydantic import model_serializer
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Optional, Dict, Any, List
-from datetime import datetime
 from core.utils.ids import generate_event_id
 
 
@@ -16,15 +16,32 @@ def generate_uuid7():
 
 
 class AlphaPandaBaseModel(BaseModel):
-    """Base model for all Alpha Panda schemas with proper JSON encoding (Pydantic v2)."""
+    """Base model for all Alpha Panda schemas with proper JSON encoding (Pydantic v2).
 
-    # Pydantic v2 configuration for JSON serialization
-    model_config = ConfigDict(
-        json_encoders={
-            Decimal: (lambda v: float(v) if v is not None else None),
-            datetime: (lambda v: v.isoformat() if v is not None else None),
-        }
-    )
+    Note: Migrated away from deprecated json_encoders to model_serializer to
+    prepare for Pydantic v3.
+    """
+
+    model_config = ConfigDict()
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler):  # type: ignore[override]
+        def _encode(obj):
+            if isinstance(obj, Decimal):
+                return float(obj)
+            if isinstance(obj, datetime):
+                # Ensure ISO 8601 with timezone when available
+                return obj.isoformat()
+            if isinstance(obj, dict):
+                return {k: _encode(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_encode(v) for v in obj]
+            if isinstance(obj, tuple):
+                return tuple(_encode(v) for v in obj)
+            return obj
+
+        data = handler(self)
+        return _encode(data)
 
 
 class EventType(str, Enum):

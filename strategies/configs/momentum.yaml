@@ -1,0 +1,16 @@
+strategy_name: 'NIFTY Rules Momentum'
+strategy_class: 'momentum'  # Rule-based momentum (not ml_momentum)
+enabled: true
+parameters:
+  lookback_periods: 20
+  threshold: 0.012  # 1.2% momentum threshold
+  position_size: 100
+brokers: ['paper']
+instruments: [256265]  # NIFTY 50 token
+
+# Optional configuration
+description: 'Rule-based momentum strategy using price change thresholds'
+tags: ['momentum', 'rules-based', 'technical-analysis']
+risk_limits:
+  max_position_size: 10000.0
+  risk_multiplier: 1.0
